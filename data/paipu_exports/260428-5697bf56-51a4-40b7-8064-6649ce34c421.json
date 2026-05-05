@@ -1,0 +1,410 @@
+{
+  "meta": {
+    "uuid": "260428-5697bf56-51a4-40b7-8064-6649ce34c421",
+    "source": "fetchGameRecord"
+  },
+  "head": {
+    "uuid": "260428-5697bf56-51a4-40b7-8064-6649ce34c421",
+    "start_time": 1777308096,
+    "end_time": 1777308517,
+    "config": {
+      "category": 2,
+      "mode": {
+        "mode": 12,
+        "detail_rule": {}
+      },
+      "meta": {
+        "mode_id": 24
+      }
+    },
+    "accounts": [
+      {
+        "account_id": 5599,
+        "seat": 1,
+        "nickname": "Levey",
+        "avatar_id": 40012301,
+        "character": {
+          "charid": 20000123,
+          "level": 3,
+          "exp": 1880,
+          "skin": 40012301
+        },
+        "title": 600027,
+        "level": {
+          "id": 10502,
+          "score": 353
+        },
+        "level3": {
+          "id": 20402,
+          "score": 1265
+        },
+        "avatar_frame": 30550030,
+        "views": [
+          {
+            "item_id": 30560010
+          },
+          {
+            "slot": 1,
+            "item_id": 308041
+          },
+          {
+            "slot": 2,
+            "item_id": 308042
+          },
+          {
+            "slot": 3
+          },
+          {
+            "slot": 4,
+            "item_id": 305056
+          },
+          {
+            "slot": 5,
+            "item_id": 30550030
+          },
+          {
+            "slot": 6,
+            "item_id": 305046
+          },
+          {
+            "slot": 7,
+            "item_id": 30570004
+          },
+          {
+            "slot": 8,
+            "item_id": 30700005
+          },
+          {
+            "slot": 10,
+            "item_id": 30590001
+          }
+        ]
+      },
+      {
+        "account_id": 8753255,
+        "seat": 0,
+        "nickname": "果味苏打",
+        "avatar_id": 40010901,
+        "character": {
+          "charid": 20000109,
+          "level": 4,
+          "exp": 31377,
+          "skin": 40010901
+        },
+        "title": 600078,
+        "level": {
+          "id": 10501,
+          "score": 2134
+        },
+        "level3": {
+          "id": 20402,
+          "score": 1525
+        },
+        "avatar_frame": 30550022,
+        "views": [
+          {
+            "item_id": 30560008
+          },
+          {
+            "slot": 1,
+            "item_id": 30520002
+          },
+          {
+            "slot": 2,
+            "item_id": 30530012
+          },
+          {
+            "slot": 4,
+            "item_id": 306201
+          },
+          {
+            "slot": 5,
+            "item_id": 30550022
+          },
+          {
+            "slot": 6,
+            "item_id": 305809
+          },
+          {
+            "slot": 7,
+            "item_id": 30570012
+          },
+          {
+            "slot": 8,
+            "item_id": 30700005
+          },
+          {
+            "slot": 10,
+            "item_id": 30590001
+          },
+          {
+            "slot": 13
+          }
+        ]
+      },
+      {
+        "account_id": 70564354,
+        "seat": 2,
+        "nickname": "桃色饅頭",
+        "avatar_id": 40010003,
+        "character": {
+          "charid": 20000100,
+          "level": 5,
+          "skin": 40010003,
+          "is_upgraded": true,
+          "extra_emoji": [
+            10,
+            11,
+            12,
+            945
+          ]
+        },
+        "level": {
+          "id": 10302,
+          "score": 1091
+        },
+        "level3": {
+          "id": 20402,
+          "score": 2130
+        },
+        "views": [
+          {
+            "slot": 10,
+            "item_id": 305902
+          },
+          {
+            "slot": 4,
+            "item_id": 30505007
+          },
+          {
+            "slot": 8,
+            "item_id": 30700005
+          }
+        ]
+      }
+    ],
+    "result": {
+      "players": [
+        {
+          "seat": 2,
+          "total_point": 55000,
+          "part_point_1": 75000,
+          "part_point_2": 0,
+          "grading_score": 215,
+          "gold": 10807
+        },
+        {
+          "seat": 0,
+          "total_point": 2000,
+          "part_point_1": 37000,
+          "part_point_2": 0,
+          "grading_score": 2,
+          "gold": 393
+        },
+        {
+          "seat": 1,
+          "total_point": -57000,
+          "part_point_1": -7000,
+          "part_point_2": 0,
+          "grading_score": -247,
+          "gold": -11200
+        }
+      ]
+    },
+    "standard_rule": 1
+  },
+  "result": {
+    "players": [
+      {
+        "seat": 2,
+        "total_point": 55000,
+        "part_point_1": 75000,
+        "part_point_2": 0,
+        "grading_score": 215,
+        "gold": 10807
+      },
+      {
+        "seat": 0,
+        "total_point": 2000,
+        "part_point_1": 37000,
+        "part_point_2": 0,
+        "grading_score": 2,
+        "gold": 393
+      },
+      {
+        "seat": 1,
+        "total_point": -57000,
+        "part_point_1": -7000,
+        "part_point_2": 0,
+        "grading_score": -247,
+        "gold": -11200
+      }
+    ]
+  },
+  "accounts": [
+    {
+      "account_id": 5599,
+      "seat": 1,
+      "nickname": "Levey",
+      "avatar_id": 40012301,
+      "character": {
+        "charid": 20000123,
+        "level": 3,
+        "exp": 1880,
+        "skin": 40012301
+      },
+      "title": 600027,
+      "level": {
+        "id": 10502,
+        "score": 353
+      },
+      "level3": {
+        "id": 20402,
+        "score": 1265
+      },
+      "avatar_frame": 30550030,
+      "views": [
+        {
+          "item_id": 30560010
+        },
+        {
+          "slot": 1,
+          "item_id": 308041
+        },
+        {
+          "slot": 2,
+          "item_id": 308042
+        },
+        {
+          "slot": 3
+        },
+        {
+          "slot": 4,
+          "item_id": 305056
+        },
+        {
+          "slot": 5,
+          "item_id": 30550030
+        },
+        {
+          "slot": 6,
+          "item_id": 305046
+        },
+        {
+          "slot": 7,
+          "item_id": 30570004
+        },
+        {
+          "slot": 8,
+          "item_id": 30700005
+        },
+        {
+          "slot": 10,
+          "item_id": 30590001
+        }
+      ]
+    },
+    {
+      "account_id": 8753255,
+      "seat": 0,
+      "nickname": "果味苏打",
+      "avatar_id": 40010901,
+      "character": {
+        "charid": 20000109,
+        "level": 4,
+        "exp": 31377,
+        "skin": 40010901
+      },
+      "title": 600078,
+      "level": {
+        "id": 10501,
+        "score": 2134
+      },
+      "level3": {
+        "id": 20402,
+        "score": 1525
+      },
+      "avatar_frame": 30550022,
+      "views": [
+        {
+          "item_id": 30560008
+        },
+        {
+          "slot": 1,
+          "item_id": 30520002
+        },
+        {
+          "slot": 2,
+          "item_id": 30530012
+        },
+        {
+          "slot": 4,
+          "item_id": 306201
+        },
+        {
+          "slot": 5,
+          "item_id": 30550022
+        },
+        {
+          "slot": 6,
+          "item_id": 305809
+        },
+        {
+          "slot": 7,
+          "item_id": 30570012
+        },
+        {
+          "slot": 8,
+          "item_id": 30700005
+        },
+        {
+          "slot": 10,
+          "item_id": 30590001
+        },
+        {
+          "slot": 13
+        }
+      ]
+    },
+    {
+      "account_id": 70564354,
+      "seat": 2,
+      "nickname": "桃色饅頭",
+      "avatar_id": 40010003,
+      "character": {
+        "charid": 20000100,
+        "level": 5,
+        "skin": 40010003,
+        "is_upgraded": true,
+        "extra_emoji": [
+          10,
+          11,
+          12,
+          945
+        ]
+      },
+      "level": {
+        "id": 10302,
+        "score": 1091
+      },
+      "level3": {
+        "id": 20402,
+        "score": 2130
+      },
+      "views": [
+        {
+          "slot": 10,
+          "item_id": 305902
+        },
+        {
+          "slot": 4,
+          "item_id": 30505007
+        },
+        {
+          "slot": 8,
+          "item_id": 30700005
+        }
+      ]
+    }
+  ]
+}

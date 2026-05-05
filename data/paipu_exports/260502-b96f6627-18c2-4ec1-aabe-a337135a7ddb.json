@@ -1,0 +1,440 @@
+{
+  "meta": {
+    "uuid": "260502-b96f6627-18c2-4ec1-aabe-a337135a7ddb",
+    "source": "fetchGameRecord"
+  },
+  "head": {
+    "uuid": "260502-b96f6627-18c2-4ec1-aabe-a337135a7ddb",
+    "start_time": 1777686203,
+    "end_time": 1777687277,
+    "config": {
+      "category": 2,
+      "mode": {
+        "mode": 12,
+        "detail_rule": {}
+      },
+      "meta": {
+        "mode_id": 24
+      }
+    },
+    "accounts": [
+      {
+        "account_id": 5599,
+        "seat": 0,
+        "nickname": "Levey",
+        "avatar_id": 40012301,
+        "character": {
+          "charid": 20000123,
+          "level": 3,
+          "exp": 5600,
+          "skin": 40012301
+        },
+        "title": 600027,
+        "level": {
+          "id": 10502,
+          "score": 353
+        },
+        "level3": {
+          "id": 20402,
+          "score": 1591
+        },
+        "avatar_frame": 30550030,
+        "views": [
+          {
+            "item_id": 30560010
+          },
+          {
+            "slot": 1,
+            "item_id": 308041
+          },
+          {
+            "slot": 2,
+            "item_id": 308042
+          },
+          {
+            "slot": 3
+          },
+          {
+            "slot": 4,
+            "item_id": 305056
+          },
+          {
+            "slot": 5,
+            "item_id": 30550030
+          },
+          {
+            "slot": 6,
+            "item_id": 305046
+          },
+          {
+            "slot": 7,
+            "item_id": 30570004
+          },
+          {
+            "slot": 8,
+            "item_id": 30700005
+          },
+          {
+            "slot": 10,
+            "item_id": 30590001
+          }
+        ]
+      },
+      {
+        "account_id": 68802646,
+        "seat": 1,
+        "nickname": "いずごー",
+        "avatar_id": 407101,
+        "character": {
+          "charid": 200071,
+          "level": 5,
+          "skin": 407101,
+          "is_upgraded": true,
+          "extra_emoji": [
+            10,
+            11,
+            12
+          ]
+        },
+        "level": {
+          "id": 10401,
+          "score": 1740
+        },
+        "level3": {
+          "id": 20402,
+          "score": 117
+        },
+        "views": [
+          {},
+          {
+            "slot": 1,
+            "item_id": 308026
+          },
+          {
+            "slot": 2,
+            "item_id": 305033
+          },
+          {
+            "slot": 3,
+            "item_id": 305011
+          },
+          {
+            "slot": 4,
+            "item_id": 305025
+          },
+          {
+            "slot": 5
+          },
+          {
+            "slot": 6,
+            "item_id": 305046
+          },
+          {
+            "slot": 7
+          },
+          {
+            "slot": 10,
+            "item_id": 305902
+          }
+        ]
+      },
+      {
+        "account_id": 74730279,
+        "seat": 2,
+        "nickname": "大吉ohyoshi",
+        "avatar_id": 404801,
+        "character": {
+          "charid": 200048,
+          "level": 4,
+          "exp": 45520,
+          "skin": 404801
+        },
+        "title": 600032,
+        "level": {
+          "id": 10402,
+          "score": 1241
+        },
+        "level3": {
+          "id": 20402,
+          "score": 281
+        },
+        "views": [
+          {
+            "item_id": 305018
+          },
+          {
+            "slot": 1,
+            "item_id": 308052
+          },
+          {
+            "slot": 2,
+            "item_id": 308027
+          },
+          {
+            "slot": 4,
+            "item_id": 30505007
+          },
+          {
+            "slot": 5
+          },
+          {
+            "slot": 6,
+            "item_id": 30580024
+          },
+          {
+            "slot": 7
+          },
+          {
+            "slot": 8,
+            "item_id": 30700005
+          },
+          {
+            "slot": 10,
+            "item_id": 30590001
+          },
+          {
+            "slot": 13
+          }
+        ]
+      }
+    ],
+    "result": {
+      "players": [
+        {
+          "seat": 2,
+          "total_point": 34400,
+          "part_point_1": 54400,
+          "part_point_2": 0,
+          "grading_score": 195,
+          "gold": 9632
+        },
+        {
+          "seat": 0,
+          "total_point": -5100,
+          "part_point_1": 29900,
+          "part_point_2": 0,
+          "grading_score": -5,
+          "gold": -1428
+        },
+        {
+          "seat": 1,
+          "total_point": -29300,
+          "part_point_1": 20700,
+          "part_point_2": 0,
+          "grading_score": -219,
+          "gold": -8204
+        }
+      ]
+    },
+    "standard_rule": 1
+  },
+  "result": {
+    "players": [
+      {
+        "seat": 2,
+        "total_point": 34400,
+        "part_point_1": 54400,
+        "part_point_2": 0,
+        "grading_score": 195,
+        "gold": 9632
+      },
+      {
+        "seat": 0,
+        "total_point": -5100,
+        "part_point_1": 29900,
+        "part_point_2": 0,
+        "grading_score": -5,
+        "gold": -1428
+      },
+      {
+        "seat": 1,
+        "total_point": -29300,
+        "part_point_1": 20700,
+        "part_point_2": 0,
+        "grading_score": -219,
+        "gold": -8204
+      }
+    ]
+  },
+  "accounts": [
+    {
+      "account_id": 5599,
+      "seat": 0,
+      "nickname": "Levey",
+      "avatar_id": 40012301,
+      "character": {
+        "charid": 20000123,
+        "level": 3,
+        "exp": 5600,
+        "skin": 40012301
+      },
+      "title": 600027,
+      "level": {
+        "id": 10502,
+        "score": 353
+      },
+      "level3": {
+        "id": 20402,
+        "score": 1591
+      },
+      "avatar_frame": 30550030,
+      "views": [
+        {
+          "item_id": 30560010
+        },
+        {
+          "slot": 1,
+          "item_id": 308041
+        },
+        {
+          "slot": 2,
+          "item_id": 308042
+        },
+        {
+          "slot": 3
+        },
+        {
+          "slot": 4,
+          "item_id": 305056
+        },
+        {
+          "slot": 5,
+          "item_id": 30550030
+        },
+        {
+          "slot": 6,
+          "item_id": 305046
+        },
+        {
+          "slot": 7,
+          "item_id": 30570004
+        },
+        {
+          "slot": 8,
+          "item_id": 30700005
+        },
+        {
+          "slot": 10,
+          "item_id": 30590001
+        }
+      ]
+    },
+    {
+      "account_id": 68802646,
+      "seat": 1,
+      "nickname": "いずごー",
+      "avatar_id": 407101,
+      "character": {
+        "charid": 200071,
+        "level": 5,
+        "skin": 407101,
+        "is_upgraded": true,
+        "extra_emoji": [
+          10,
+          11,
+          12
+        ]
+      },
+      "level": {
+        "id": 10401,
+        "score": 1740
+      },
+      "level3": {
+        "id": 20402,
+        "score": 117
+      },
+      "views": [
+        {},
+        {
+          "slot": 1,
+          "item_id": 308026
+        },
+        {
+          "slot": 2,
+          "item_id": 305033
+        },
+        {
+          "slot": 3,
+          "item_id": 305011
+        },
+        {
+          "slot": 4,
+          "item_id": 305025
+        },
+        {
+          "slot": 5
+        },
+        {
+          "slot": 6,
+          "item_id": 305046
+        },
+        {
+          "slot": 7
+        },
+        {
+          "slot": 10,
+          "item_id": 305902
+        }
+      ]
+    },
+    {
+      "account_id": 74730279,
+      "seat": 2,
+      "nickname": "大吉ohyoshi",
+      "avatar_id": 404801,
+      "character": {
+        "charid": 200048,
+        "level": 4,
+        "exp": 45520,
+        "skin": 404801
+      },
+      "title": 600032,
+      "level": {
+        "id": 10402,
+        "score": 1241
+      },
+      "level3": {
+        "id": 20402,
+        "score": 281
+      },
+      "views": [
+        {
+          "item_id": 305018
+        },
+        {
+          "slot": 1,
+          "item_id": 308052
+        },
+        {
+          "slot": 2,
+          "item_id": 308027
+        },
+        {
+          "slot": 4,
+          "item_id": 30505007
+        },
+        {
+          "slot": 5
+        },
+        {
+          "slot": 6,
+          "item_id": 30580024
+        },
+        {
+          "slot": 7
+        },
+        {
+          "slot": 8,
+          "item_id": 30700005
+        },
+        {
+          "slot": 10,
+          "item_id": 30590001
+        },
+        {
+          "slot": 13
+        }
+      ]
+    }
+  ]
+}
