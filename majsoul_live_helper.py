@@ -2,9 +2,12 @@
 import argparse
 import base64
 import json
+import os
 import time
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import unquote
+import xml.etree.ElementTree as ET
 
 import parse_majsoul_har as pmh
 
@@ -179,14 +182,23 @@ def shanten_kokushi(counts):
     return 13 - unique - (1 if pair else 0)
 
 
-def total_shanten(counts, open_melds=0):
+@lru_cache(maxsize=30000)
+def _total_shanten_cached(counts_key, open_melds):
+    counts = list(counts_key)
     normal = shanten_normal(counts[:], open_melds)
     if open_melds:
         return normal
     return min(normal, shanten_chiitoi(counts), shanten_kokushi(counts))
 
 
-def ukeire_for_counts(counts, shanten_value, open_melds, visible_counts=None):
+def total_shanten(counts, open_melds=0):
+    return _total_shanten_cached(tuple(counts), open_melds)
+
+
+@lru_cache(maxsize=30000)
+def _ukeire_for_counts_cached(counts_key, shanten_value, open_melds, visible_key):
+    counts = list(counts_key)
+    visible_counts = list(visible_key) if visible_key is not None else None
     total = 0
     improving = []
     for index in range(34):
@@ -202,7 +214,17 @@ def ukeire_for_counts(counts, shanten_value, open_melds, visible_counts=None):
             remaining = max(0, remaining)
             total += remaining
             improving.append(index_to_tile(index))
-    return total, improving
+    return total, tuple(improving)
+
+
+def ukeire_for_counts(counts, shanten_value, open_melds, visible_counts=None):
+    total, improving = _ukeire_for_counts_cached(
+        tuple(counts),
+        shanten_value,
+        open_melds,
+        tuple(visible_counts) if visible_counts is not None else None,
+    )
+    return total, list(improving)
 
 
 def dora_set(indicators):
@@ -290,7 +312,7 @@ def isolated_tile_score(counts, index):
     return 0.6 if is_terminal_or_honor_index(index) else 0.35
 
 
-@lru_cache(maxsize=20000)
+@lru_cache(maxsize=10000)
 def _hand_value_score_cached(counts_key, indicator_key, seat_wind, round_wind, open_melds):
     counts = list(counts_key)
     actual_dora = dora_set(indicator_key or [])
@@ -378,7 +400,85 @@ def hand_value_score(counts, indicators=None, seat_wind=None, round_wind=None, o
     )
 
 
-@lru_cache(maxsize=50000)
+def detect_hand_routes(counts, indicators=None, seat_wind=None, round_wind=None, open_melds=0):
+    indicators = indicators or []
+    actual_dora = dora_set(indicators)
+    value_honors = {seat_wind, round_wind, "5z", "6z", "7z"} - {None}
+    tags = []
+    route_score = 0.0
+    route_commitment = 0.0
+
+    simple_count = sum(
+        count for index, count in enumerate(counts)
+        if count and not is_terminal_or_honor_index(index)
+    )
+    terminal_honor_count = sum(
+        count for index, count in enumerate(counts)
+        if count and is_terminal_or_honor_index(index)
+    )
+    pair_count = sum(1 for count in counts if count >= 2)
+    triplet_count = sum(1 for count in counts if count >= 3)
+    dora_count = sum(
+        count for index, count in enumerate(counts)
+        if count and index_to_tile(index) in actual_dora
+    )
+    suit_counts = [sum(counts[0:9]), sum(counts[9:18]), sum(counts[18:27])]
+    dominant_suit = max(suit_counts) if suit_counts else 0
+
+    value_pair_count = 0
+    value_single_count = 0
+    for tile in value_honors:
+        count = counts[tile_to_index(tile)]
+        if count >= 2:
+            value_pair_count += 1
+        elif count == 1:
+            value_single_count += 1
+
+    if simple_count >= max(8, terminal_honor_count + 3):
+        tags.append("断幺路线")
+        route_score += 1.0
+        route_commitment += 0.45
+    if value_pair_count:
+        tags.append("役牌路线")
+        route_score += 1.25 * value_pair_count
+        route_commitment += 0.8 * value_pair_count
+    elif value_single_count >= 2:
+        tags.append("役牌种子")
+        route_score += 0.4
+        route_commitment += 0.2
+    if dominant_suit >= 9:
+        tags.append("染手路线")
+        route_score += 1.5
+        route_commitment += 1.4
+    elif dominant_suit >= 7:
+        tags.append("一色寄")
+        route_score += 0.7
+        route_commitment += 0.55
+    if open_melds == 0 and pair_count >= 5:
+        tags.append("七对路线")
+        route_score += 1.2
+        route_commitment += 1.0
+    if triplet_count >= 2 and pair_count >= 3:
+        tags.append("对对寄")
+        route_score += 0.8
+        route_commitment += 0.7
+    if dora_count >= 2:
+        tags.append("宝牌重")
+        route_score += 0.8 + dora_count * 0.35
+        route_commitment += 0.55
+    if open_melds == 0 and simple_count >= 6:
+        tags.append("门清立直")
+        route_score += 0.45
+        route_commitment += 0.3
+
+    return {
+        "tags": tags[:4],
+        "route_score": round(route_score, 2),
+        "route_commitment": round(route_commitment, 2),
+    }
+
+
+@lru_cache(maxsize=10000)
 def _shallow_best_hand_metrics_cached(counts_key, open_melds, visible_key, indicator_key, seat_wind, round_wind):
     counts = list(counts_key)
     visible_counts = list(visible_key) if visible_key is not None else None
@@ -405,7 +505,7 @@ def shallow_best_hand_metrics(counts, open_melds=0, visible_counts=None, indicat
     )
 
 
-@lru_cache(maxsize=50000)
+@lru_cache(maxsize=5000)
 def _future_hand_progress_cached(counts_key, shanten_value, base_ukeire, open_melds, visible_key, indicator_key, seat_wind, round_wind):
     counts = list(counts_key)
     visible_counts = list(visible_key) if visible_key is not None else None
@@ -476,7 +576,15 @@ def future_hand_progress(counts, shanten_value, base_ukeire, open_melds=0, visib
     )
 
 
-def recommend_discards(tiles, indicators, open_melds=0, visible_counts=None, seat_wind=None, round_wind=None):
+def recommend_discards(
+    tiles,
+    indicators,
+    open_melds=0,
+    visible_counts=None,
+    seat_wind=None,
+    round_wind=None,
+    lookahead_limit=6,
+):
     normalized_counts = hand_to_counts(tiles)
     unique_tiles = sorted(set(tiles), key=tile_sort_key)
     actual_dora = dora_set(indicators)
@@ -566,16 +674,17 @@ def recommend_discards(tiles, indicators, open_melds=0, visible_counts=None, sea
 
     best_shanten = options[0]["shanten"] if options else None
     deep_candidates = []
-    for item in options:
-        if item["shanten"] != best_shanten:
-            continue
-        if len(deep_candidates) < 6:
-            deep_candidates.append(item)
-            continue
-        if item["base_score"] >= deep_candidates[-1]["base_score"] - 10:
-            deep_candidates.append(item)
-        else:
-            break
+    if lookahead_limit and lookahead_limit > 0:
+        for item in options:
+            if item["shanten"] != best_shanten:
+                continue
+            if len(deep_candidates) < lookahead_limit:
+                deep_candidates.append(item)
+                continue
+            if item["base_score"] >= deep_candidates[-1]["base_score"] - 10:
+                deep_candidates.append(item)
+            else:
+                break
 
     for item in options:
         if item in deep_candidates:
@@ -696,6 +805,10 @@ class LiveGameState:
         self.last_action_plan = None
         self.last_tenpai_analysis = None
         self.last_discard_policy_note = None
+        self.last_push_fold_decision = None
+        self.replay_lookahead_limit = 6
+        self.include_aux_advice = True
+        self.snapshot_candidate_limit = 12
 
     def current_shanten(self):
         return total_shanten(hand_to_counts(self.hand), self.open_melds)
@@ -812,7 +925,16 @@ class LiveGameState:
             "riichi_seats": sorted(self.riichi_seats),
             "riichi_seats_display": [self.seat_name(seat) for seat in sorted(self.riichi_seats)],
             "riichi_event_index": {str(seat): self.riichi_event_index.get(seat) for seat in sorted(self.riichi_seats)},
-        }
+            }
+
+    def danger_seats(self):
+        seats = set(self.riichi_seats)
+        seats.update(
+            seat
+            for seat, count in self.open_melds_by_seat.items()
+            if seat != self.self_seat and count >= 2
+        )
+        return sorted(seats)
 
     def threat_summary(self):
         return {
@@ -881,12 +1003,160 @@ class LiveGameState:
                 weight += 0.25
         return round(weight, 2)
 
+    def threat_open_profile(self, seat):
+        melds = self.melds_by_seat.get(seat, [])
+        profile = {
+            "flush_suits": set(),
+            "honor_heavy": False,
+            "tanyao_like": False,
+            "value_honor_calls": 0,
+        }
+        if not melds:
+            return profile
+
+        suit_counter = {}
+        non_honor_tiles = 0
+        terminal_honor_tiles = 0
+        for meld in melds:
+            for tile in meld.get("tiles", []):
+                normalized = normalize_tile(tile)
+                if not normalized:
+                    continue
+                if normalized[1] == "z":
+                    terminal_honor_tiles += 1
+                    if normalized in {self.seat_wind(seat), self.round_wind(), "5z", "6z", "7z"}:
+                        profile["value_honor_calls"] += 1
+                    continue
+                non_honor_tiles += 1
+                suit_counter[normalized[1]] = suit_counter.get(normalized[1], 0) + 1
+                if normalized[0] in ("1", "9"):
+                    terminal_honor_tiles += 1
+        for suit, count in suit_counter.items():
+            if count >= 6:
+                profile["flush_suits"].add(suit)
+        profile["honor_heavy"] = terminal_honor_tiles >= max(4, non_honor_tiles)
+        profile["tanyao_like"] = non_honor_tiles >= 6 and terminal_honor_tiles <= 1
+        return profile
+
+    def tile_wall_factor(self, tile):
+        normalized = normalize_tile(tile)
+        visible = self.visible_counts[tile_to_index(normalized)]
+        if normalized[1] == "z":
+            if visible >= 3:
+                return -0.95
+            if visible == 2:
+                return -0.45
+            return 0.0
+        number = int(normalized[0])
+        if visible >= 3:
+            return -1.0 if number in (1, 9) else -0.75
+        if visible == 2:
+            return -0.45 if number in (1, 9) else -0.25
+        left_1 = self.visible_counts[tile_to_index(f"{number - 1}{normalized[1]}")] if number - 1 >= 1 else 0
+        right_1 = self.visible_counts[tile_to_index(f"{number + 1}{normalized[1]}")] if number + 1 <= 9 else 0
+        left_2 = self.visible_counts[tile_to_index(f"{number - 2}{normalized[1]}")] if number - 2 >= 1 else 0
+        right_2 = self.visible_counts[tile_to_index(f"{number + 2}{normalized[1]}")] if number + 2 <= 9 else 0
+        if left_1 >= 3 and right_1 >= 3:
+            return -0.55
+        if left_1 >= 3 or right_1 >= 3:
+            return -0.35
+        if left_2 >= 3 or right_2 >= 3:
+            return -0.2
+        return 0.0
+
+    def tile_suji_factor(self, tile, river_norm, pre_riichi_norm, post_riichi_norm):
+        normalized = normalize_tile(tile)
+        if normalized[1] == "z":
+            return 0.0
+        partners = tile_suji_partners(normalized)
+        factor = 0.0
+        if partners and all(partner in river_norm for partner in partners):
+            factor -= 1.05
+        elif partners and any(partner in river_norm for partner in partners):
+            factor -= 0.45
+        else:
+            factor += 0.55
+        if partners and all(partner in pre_riichi_norm for partner in partners):
+            factor -= 0.2
+        elif partners and any(partner in pre_riichi_norm for partner in partners):
+            factor -= 0.08
+        if partners and all(partner in post_riichi_norm for partner in partners):
+            factor -= 0.35
+        elif partners and any(partner in post_riichi_norm for partner in partners):
+            factor -= 0.15
+        return factor
+
+    def tile_center_danger_factor(self, tile):
+        normalized = normalize_tile(tile)
+        if normalized[1] == "z":
+            return 0.0
+        number = int(normalized[0])
+        visible = self.visible_counts[tile_to_index(normalized)]
+        if number == 5:
+            base = 0.82
+        elif number in (4, 6):
+            base = 0.62
+        elif number in (3, 7):
+            base = 0.38
+        elif number in (2, 8):
+            base = 0.14
+        else:
+            base = -0.22
+        if visible >= 2:
+            base -= 0.18
+        if visible >= 3:
+            base -= 0.22
+        return base
+
+    def riichi_river_partitions(self, seat):
+        river = self.discards_by_seat.get(seat, [])
+        riichi_idx = self.riichi_event_index.get(seat)
+        discard_meta = self.discard_meta_by_seat.get(seat, [])
+        if seat not in self.riichi_seats or riichi_idx is None or not discard_meta:
+            river_norm = {normalize_tile(t) for t in river}
+            return river_norm, set(), set(), set()
+        pre = []
+        post = []
+        declared = []
+        for item in discard_meta:
+            norm = normalize_tile(item.get("tile"))
+            if not norm:
+                continue
+            event_index = item.get("event_index", -1)
+            if item.get("is_liqi"):
+                declared.append(norm)
+            elif event_index < riichi_idx:
+                pre.append(norm)
+            else:
+                post.append(norm)
+        return set(pre + declared + post), set(pre), set(post), set(declared)
+
+    def open_hand_route_factor(self, seat, tile):
+        profile = self.threat_open_profile(seat)
+        normalized = normalize_tile(tile)
+        factor = 0.0
+        if normalized[1] in profile["flush_suits"]:
+            factor += 0.8
+            if normalized[0] in ("5", "6"):
+                factor += 0.15
+        elif profile["flush_suits"] and normalized[1] != "z":
+            factor -= 0.2
+        if profile["tanyao_like"]:
+            if normalized[1] == "z" or normalized[0] in ("1", "9"):
+                factor -= 0.4
+            elif normalized[0] in ("4", "5", "6"):
+                factor += 0.25
+        if profile["honor_heavy"] and normalized[1] == "z":
+            factor += 0.35
+        if profile["value_honor_calls"] and normalized[1] == "z" and self.is_value_honor(normalized):
+            factor += 0.4
+        return factor
+
     def seat_tile_danger(self, seat, tile):
         normalized = normalize_tile(tile)
-        if seat not in self.riichi_seats:
+        if seat not in self.riichi_seats and self.open_melds_by_seat.get(seat, 0) < 2:
             return 0.0
-        river = self.discards_by_seat.get(seat, [])
-        river_norm = {normalize_tile(t) for t in river}
+        river_norm, pre_riichi_norm, post_riichi_norm, declared_tiles = self.riichi_river_partitions(seat)
         if normalized in river_norm:
             return 0.0
 
@@ -901,6 +1171,7 @@ class LiveGameState:
                 for item in discard_meta[-3:]
                 if item.get("tile")
             ]
+        threat_weight = self.seat_threat_weight(seat) if seat in self.riichi_seats else (1.0 + min(0.45, self.open_melds_by_seat.get(seat, 0) * 0.12))
 
         if normalized[1] == "z":
             visible = self.visible_counts[tile_to_index(normalized)]
@@ -912,51 +1183,62 @@ class LiveGameState:
                 danger += 1.55
             if normalized in {self.seat_wind(seat), self.round_wind(), "5z", "6z", "7z"}:
                 danger += 0.35
-            return round(max(0.0, danger) * self.seat_threat_weight(seat), 2)
+            danger += self.tile_wall_factor(normalized)
+            danger += self.open_hand_route_factor(seat, normalized)
+            return round(max(0.0, danger) * threat_weight, 2)
 
-        partners = tile_suji_partners(normalized)
-        if partners and all(partner in river_norm for partner in partners):
-            danger += 0.55
-        elif partners and any(partner in river_norm for partner in partners):
-            danger += 1.1
-        else:
-            danger += 2.15
+        danger += 1.65
+        danger += self.tile_suji_factor(normalized, river_norm, pre_riichi_norm, post_riichi_norm)
+        danger += self.tile_center_danger_factor(normalized)
 
         number = int(normalized[0])
         if number in (1, 9):
             danger -= 0.25
         elif number in (2, 8):
-            danger += 0.05
+            danger += 0.02
         elif number in (3, 7):
-            danger += 0.2
-        elif number in (4, 5, 6):
-            danger += 0.45
+            danger += 0.12
+        elif number in (4, 6):
+            danger += 0.22
+        elif number == 5:
+            danger += 0.35
 
         visible = self.visible_counts[tile_to_index(normalized)]
         if visible >= 3:
-            danger -= 0.55
+            danger -= 0.2
         elif visible == 2:
-            danger -= 0.25
+            danger += 0.05
 
         if normalized in late_tiles:
             danger -= 0.35
-        elif partners and any(partner in late_tiles for partner in partners):
-            danger -= 0.15
+        if normalized in declared_tiles:
+            danger -= 0.25
+        if normalized in post_riichi_norm:
+            danger -= 0.18
+        elif normalized in pre_riichi_norm:
+            danger -= 0.06
+        partners = tile_suji_partners(normalized)
+        if partners and any(partner in declared_tiles for partner in partners):
+            danger -= 0.12
 
         if normalized in actual_dora:
             danger += 0.5
-        return round(max(0.0, danger) * self.seat_threat_weight(seat), 2)
+        danger += self.tile_wall_factor(normalized)
+        danger += self.open_hand_route_factor(seat, normalized)
+        return round(max(0.0, danger) * threat_weight, 2)
 
     def max_seat_danger(self, tile):
-        if not self.riichi_seats:
+        threat_seats = self.danger_seats()
+        if not threat_seats:
             return 0.0
-        return max(self.seat_tile_danger(seat, tile) for seat in self.riichi_seats)
+        return max(self.seat_tile_danger(seat, tile) for seat in threat_seats)
 
     def tile_danger_score(self, tile):
         normalized = normalize_tile(tile)
-        if not self.riichi_seats:
+        threat_seats = self.danger_seats()
+        if not threat_seats:
             return 0.0
-        seat_scores = [self.seat_tile_danger(seat, normalized) for seat in self.riichi_seats]
+        seat_scores = [self.seat_tile_danger(seat, normalized) for seat in threat_seats]
         return max(0.0, round(sum(seat_scores), 1))
 
     def danger_label(self, score):
@@ -1010,30 +1292,651 @@ class LiveGameState:
             self.visible_counts,
             self.seat_wind(),
             self.round_wind(),
+            self.replay_lookahead_limit,
         )
         options = self.annotate_discard_risk_patterns(options)
-        if self.riichi_seats:
-            pressure = self.defensive_pressure()
-            tilt = self.strategic_tilt()
+        if not options:
+            self.last_push_fold_decision = None
+            return options
+
+        ctx = self.build_push_fold_context(options)
+        decision = self.judge_push_fold(ctx)
+        ctx["allowed_danger"] = decision["allowed_danger"]
+        goal = self.determine_hand_goal(decision["mode"], ctx)
+        decision["goal"] = goal
+        self.last_push_fold_decision = decision
+
+        for item in options:
+            danger = self.tile_danger_score(item["tile"]) if self.riichi_seats else 0.0
+            max_danger = self.max_seat_danger(item["tile"]) if self.riichi_seats else 0.0
+            item["mode_score"] = self.score_discard_in_mode(item, decision["mode"], goal, ctx, danger, max_danger)
+
+        if decision["mode"] == "push":
             options.sort(
                 key=lambda item: (
                     item["shanten"],
-                    self.tile_danger_score(item["tile"]) * self.risk_weight_for_option(item, pressure, tilt),
+                    -item["mode_score"],
+                    -item["efficiency_score"],
+                    self.tile_danger_score(item["tile"]) if self.riichi_seats else 0.0,
+                    tile_sort_key(item["tile"]),
+                )
+            )
+        elif decision["mode"] == "neutral":
+            options.sort(
+                key=lambda item: (
+                    item["shanten"],
+                    -item["mode_score"],
+                    self.tile_danger_score(item["tile"]) if self.riichi_seats else 0.0,
                     -item["efficiency_score"],
                     tile_sort_key(item["tile"]),
                 )
             )
+        else:
+            options.sort(
+                key=lambda item: (
+                    0 if (self.max_seat_danger(item["tile"]) if self.riichi_seats else 0.0) <= decision["allowed_danger"] else 1,
+                    self.tile_danger_score(item["tile"]) if self.riichi_seats else 0.0,
+                    self.max_seat_danger(item["tile"]) if self.riichi_seats else 0.0,
+                    item["shanten"],
+                    -item["mode_score"],
+                    tile_sort_key(item["tile"]),
+                )
+            )
+
+        options = self.apply_close_choice_resolver(options, decision["mode"], goal, ctx)
+
+        if self.riichi_seats and decision["mode"] != "push":
+            pressure = self.defensive_pressure()
+            tilt = self.strategic_tilt()
             options = self.apply_discard_safety_policy(options, pressure, tilt)
         return options
+
+    def build_push_fold_context(self, options=None):
+        options = options or []
+        score_ctx = self.score_context() or {}
+        pressure = self.defensive_pressure()
+        turn = self.estimated_turn()
+        current_shanten = self.current_shanten()
+        current_ukeire = self.current_ukeire()
+        safe_tiles = self.effective_safe_tiles()
+        best_efficiency = min(
+            options,
+            key=lambda item: (
+                item["shanten"],
+                -item["efficiency_score"],
+                tile_sort_key(item["tile"]),
+            ),
+        ) if options else None
+        best_attack_danger = self.max_seat_danger(best_efficiency["tile"]) if (best_efficiency and self.riichi_seats) else 0.0
+        best_safe_tile_danger = min(
+            (self.max_seat_danger(tile) for tile in safe_tiles),
+            default=0.0,
+        ) if self.riichi_seats else 0.0
+        related_info_missing = []
+        if turn is None:
+            related_info_missing.append("turn")
+        if not score_ctx:
+            related_info_missing.append("scores")
+        return {
+            "shanten": current_shanten,
+            "ukeire": current_ukeire,
+            "best_efficiency_score": best_efficiency["efficiency_score"] if best_efficiency else 0.0,
+            "best_hand_value": best_efficiency.get("hand_value", 0.0) if best_efficiency else 0.0,
+            "dealer": self.is_dealer(),
+            "turn": turn,
+            "phase": self.phase_label(),
+            "place": score_ctx.get("place"),
+            "top_gap": score_ctx.get("top_gap", 0),
+            "last_gap": score_ctx.get("last_gap", 0),
+            "score_diff_from_1st": score_ctx.get("score_diff_from_1st"),
+            "score_diff_from_3rd": score_ctx.get("score_diff_from_3rd"),
+            "is_all_last": self.is_all_last(),
+            "riichi_count": len(self.riichi_seats),
+            "open_threat_count": sum(
+                1
+                for seat, count in self.open_melds_by_seat.items()
+                if seat != self.self_seat and count >= 2
+            ),
+            "pressure": pressure,
+            "safe_tile_count": len(safe_tiles),
+            "best_safe_tile_danger": round(best_safe_tile_danger, 2),
+            "best_attack_tile_danger": round(best_attack_danger, 2),
+            "tilt": self.strategic_tilt(),
+            "related_info_missing": related_info_missing,
+        }
+
+    def judge_push_fold(self, ctx):
+        mode = "neutral"
+        allowed_danger = 1.8
+        reason_tag = "balanced_default"
+
+        shanten = ctx["shanten"]
+        pressure = ctx["pressure"]
+        riichi_count = ctx["riichi_count"]
+        safe_tile_count = ctx["safe_tile_count"]
+        attack_danger = ctx["best_attack_tile_danger"]
+        place = ctx["place"]
+        turn = ctx["turn"] or 0
+        tilt = ctx["tilt"]
+        dealer = ctx["dealer"]
+        is_all_last = ctx["is_all_last"]
+
+        if riichi_count:
+            if riichi_count >= 2 and shanten >= 1 and safe_tile_count >= 1:
+                return {
+                    "mode": "fold",
+                    "allowed_danger": 0.9,
+                    "reason_tag": "double_riichi_pressure",
+                    "related_info_missing": ctx["related_info_missing"],
+                }
+            if shanten >= 2 and safe_tile_count >= 1:
+                mode = "fold"
+                allowed_danger = 1.0
+                reason_tag = "riichi_vs_2shanten"
+            elif shanten == 1:
+                if dealer and tilt == "积极" and ctx["ukeire"] >= 16 and attack_danger <= 1.6 and pressure <= 4:
+                    mode = "push"
+                    allowed_danger = 2.1
+                    reason_tag = "dealer_good_1shanten_push"
+                elif place == 4 and is_all_last and ctx["best_hand_value"] >= 4.0 and attack_danger <= 1.9:
+                    mode = "push"
+                    allowed_danger = 1.9
+                    reason_tag = "all_last_need_points"
+                elif safe_tile_count >= 1 and (attack_danger >= 1.8 or pressure >= 5):
+                    mode = "fold"
+                    allowed_danger = 1.0
+                    reason_tag = "1shanten_under_pressure"
+                else:
+                    mode = "neutral"
+                    allowed_danger = 1.5
+                    reason_tag = "1shanten_recheck"
+            else:
+                if attack_danger <= 2.3 and (dealer or tilt == "积极" or place == 4):
+                    mode = "push"
+                    allowed_danger = 2.3
+                    reason_tag = "tenpai_can_push"
+                elif safe_tile_count >= 1 and attack_danger >= 2.6:
+                    mode = "fold"
+                    allowed_danger = 0.9
+                    reason_tag = "tenpai_too_risky"
+                else:
+                    mode = "neutral"
+                    allowed_danger = 1.7
+                    reason_tag = "tenpai_balanced"
+        else:
+            if shanten == 0:
+                mode = "push"
+                allowed_danger = 2.4
+                reason_tag = "tenpai_no_riichi"
+            elif shanten == 1:
+                if dealer or tilt == "积极" or (place == 4 and (ctx["top_gap"] or 0) >= 8000):
+                    mode = "push"
+                    allowed_danger = 2.0 if pressure <= 3 else 1.7
+                    reason_tag = "1shanten_attack_window"
+                elif pressure >= 4 and turn >= 12:
+                    mode = "neutral"
+                    allowed_danger = 1.4
+                    reason_tag = "late_round_caution"
+            else:
+                if pressure >= 4 and turn >= 12 and safe_tile_count >= 1:
+                    mode = "fold"
+                    allowed_danger = 1.0
+                    reason_tag = "deep_hand_late_pressure"
+                elif pressure >= 3:
+                    mode = "neutral"
+                    allowed_danger = 1.3
+                    reason_tag = "multi_open_threats"
+                else:
+                    mode = "push"
+                    allowed_danger = 1.8
+                    reason_tag = "early_shape_build"
+
+        if place == 1 and is_all_last and ctx["last_gap"] > 4000 and mode == "push" and shanten > 0:
+            mode = "neutral"
+            allowed_danger = min(allowed_danger, 1.3)
+            reason_tag = "protect_lead"
+
+        return {
+            "mode": mode,
+            "allowed_danger": round(allowed_danger, 2),
+            "reason_tag": reason_tag,
+            "related_info_missing": ctx["related_info_missing"],
+        }
+
+    def determine_hand_goal(self, mode, ctx):
+        if mode == "fold":
+            return "稳定优先"
+        if ctx["is_all_last"] and ctx["place"] == 1 and (ctx["last_gap"] or 0) > 4000:
+            return "稳定优先"
+        if ctx["place"] == 4 and (ctx["is_all_last"] or (ctx["top_gap"] or 0) >= 8000):
+            return "打点优先"
+        if ctx["best_hand_value"] >= 4.8 and ctx["shanten"] <= 1:
+            return "打点优先"
+        if ctx["phase"] == "早巡" or ctx["shanten"] >= 2:
+            return "速度优先"
+        if ctx["pressure"] >= 4:
+            return "稳定优先"
+        return "速度优先" if mode == "push" else "稳定优先"
+
+    def score_discard_in_mode(self, item, mode, goal, ctx, danger, max_danger):
+        speed_score = (
+            -item["shanten"] * 220.0
+            + item["ukeire"] * 5.2
+            + item.get("advance_ukeire", 0) * 2.0
+            + item.get("improvement_ukeire", 0) * 0.95
+            + item.get("future_ukeire", 0.0) * 0.4
+        )
+        value_score = item.get("hand_value", 0.0) * 13.0
+        route_score = item.get("route_score", 0.0) * 16.0 + item.get("route_commitment", 0.0) * 7.0
+        if "高打点路线" in item.get("risk_reward_tags", []):
+            value_score += 8.0
+        stability_score = -danger * 24.0 - max_danger * 15.0
+        stability_score += item.get("safe_tile_keep_count", 0) * 11.0
+        if max_danger <= 0.9:
+            stability_score += 18.0
+        elif max_danger <= 1.2:
+            stability_score += 8.0
+        if "高总危险" in item.get("risk_reward_tags", []):
+            stability_score -= 8.0
+        if item.get("breaks_all_safety"):
+            stability_score -= 16.0
+
+        # Endgame placement edges often hinge on keeping one extra retreat path
+        # or slightly reducing exposure when efficiency is otherwise very close.
+        if ctx.get("is_all_last") and ctx.get("place") in (1, 4):
+            stability_score += item.get("safe_tile_keep_count", 0) * 6.0
+            stability_score -= danger * 3.5
+            stability_score -= max_danger * 2.0
+            if item.get("breaks_all_safety"):
+                stability_score -= 10.0
+        elif ctx.get("pressure", 0) >= 4 and mode != "push":
+            stability_score += item.get("safe_tile_keep_count", 0) * 3.0
+            stability_score -= danger * 2.0
+
+        if mode == "push":
+            value_weight = 1.05 if goal == "打点优先" else 0.8
+            route_weight = 1.05 if goal == "打点优先" else 0.8
+            return round(speed_score + value_score * value_weight + route_score * route_weight + stability_score * 0.35, 2)
+        if mode == "neutral":
+            value_weight = 1.0 if goal == "打点优先" else 0.75
+            route_weight = 0.95 if goal == "打点优先" else 0.75
+            speed_weight = 0.88
+            stability_weight = 0.9
+            if ctx.get("is_all_last") and ctx.get("place") in (1, 4) and goal == "稳定优先":
+                speed_weight = 0.8
+                stability_weight = 1.05
+            return round(speed_score * speed_weight + value_score * value_weight + route_score * route_weight + stability_score * stability_weight, 2)
+
+        score = stability_score * 1.65 + speed_score * 0.35 + value_score * 0.3 + route_score * 0.4
+        if ctx.get("is_all_last") and ctx.get("place") in (1, 4):
+            score += item.get("safe_tile_keep_count", 0) * 8.0
+        if max_danger > ctx["allowed_danger"]:
+            score -= (max_danger - ctx["allowed_danger"]) * 35.0
+        return round(score, 2)
+
+    def close_choice_resolver_active(self, mode, goal, ctx, best, second):
+        if not best or not second:
+            return False
+        if best["shanten"] != second["shanten"]:
+            return False
+        mode_gap = abs((best.get("mode_score") or 0.0) - (second.get("mode_score") or 0.0))
+        if mode_gap > 6.5:
+            return False
+        if (
+            ctx.get("is_all_last")
+            and ctx.get("place") in (1, 4)
+            and mode == "push"
+            and goal == "打点优先"
+            and mode_gap <= 3.0
+        ):
+            return True
+        if ctx.get("is_all_last") and ctx.get("place") in (1, 4) and mode in ("neutral", "fold"):
+            return True
+        if mode == "fold" and ctx.get("pressure", 0) >= 4:
+            return True
+        if mode == "neutral" and goal == "稳定优先" and ctx.get("pressure", 0) >= 4:
+            return True
+        return False
+
+    def endgame_tile_flex_score(self, tile):
+        normalized = normalize_tile(tile)
+        if normalized.endswith("z"):
+            return 3
+        number = int(normalized[0])
+        if number in (1, 9):
+            return 2
+        if number in (2, 8):
+            return 1
+        return 0
+
+    def close_choice_tile_tiebreak(self, tile):
+        normalized = normalize_tile(tile)
+        if normalized.endswith("z"):
+            return 100 - tile_to_index(normalized)
+        number = int(normalized[0])
+        edge_bias = 10 if number in (1, 9) else 6 if number in (2, 8) else 0
+        return edge_bias - tile_to_index(normalized) * 0.01
+
+    def close_choice_model_active(self, mode, goal, ctx, best, second):
+        model = load_close_choice_model()
+        if not model:
+            return False
+        if not best or not second or best["shanten"] != second["shanten"]:
+            return False
+        if not (ctx.get("is_all_last") and ctx.get("place") in (1, 4)):
+            return False
+        mode_gap = abs((best.get("mode_score") or 0.0) - (second.get("mode_score") or 0.0))
+        if mode_gap > 4.5:
+            return False
+        if mode == "fold" and ctx.get("pressure", 0) >= 3:
+            return True
+        if mode == "neutral" and ctx.get("pressure", 0) >= 3:
+            return True
+        if mode == "push" and goal == "打点优先" and mode_gap <= 3.0:
+            return True
+        return False
+
+    def close_choice_model_features(self, item, mode, goal, ctx):
+        normalized = normalize_tile(item["tile"])
+        suit = normalized[1]
+        number = int(normalized[0]) if suit != "z" else 0
+        danger = float(item.get("danger", 0.0) or 0.0)
+        max_danger = float(item.get("max_danger", 0.0) or 0.0)
+        future_ukeire = float(item.get("future_ukeire", 0.0) or 0.0)
+        improvement_ukeire = float(item.get("improvement_ukeire", 0.0) or 0.0)
+        advance_ukeire = float(item.get("advance_ukeire", 0.0) or 0.0)
+        hand_value = float(item.get("hand_value", 0.0) or 0.0)
+        route_score = float(item.get("route_score", 0.0) or 0.0)
+        mode_score = float(item.get("mode_score", 0.0) or 0.0)
+        ukeire = float(item.get("ukeire", 0.0) or 0.0)
+
+        is_honor = 1.0 if suit == "z" else 0.0
+        is_terminal = 1.0 if suit != "z" and number in (1, 9) else 0.0
+        is_edge = 1.0 if suit != "z" and number in (2, 8) else 0.0
+        is_center = 1.0 if suit != "z" and number in (4, 5, 6) else 0.0
+        counts = hand_to_counts(self.hand)
+        idx = tile_to_index(normalized)
+        tile_count = counts[idx]
+        left1 = right1 = left2 = right2 = 0
+        if suit != "z":
+            base = idx - (number - 1)
+            if number >= 2:
+                left1 = counts[base + number - 2]
+            if number <= 8:
+                right1 = counts[base + number]
+            if number >= 3:
+                left2 = counts[base + number - 3]
+            if number <= 7:
+                right2 = counts[base + number + 1]
+        adjacent_count = left1 + right1
+        gap_count = left2 + right2
+        connected_score = adjacent_count + gap_count * 0.5
+        isolated_cut = 1.0 if suit != "z" and tile_count == 1 and adjacent_count == 0 and gap_count == 0 else 0.0
+
+        feats = {
+            "mode_score_n": round(mode_score / 100.0, 4),
+            "ukeire_n": round(ukeire / 40.0, 4),
+            "advance_n": round(advance_ukeire / 40.0, 4),
+            "improve_n": round(improvement_ukeire / 30.0, 4),
+            "future_n": round(future_ukeire / 25.0, 4),
+            "value_n": round(hand_value / 12.0, 4),
+            "danger_n": round(danger / 6.0, 4),
+            "max_danger_n": round(max_danger / 4.0, 4),
+            "route_n": round(route_score / 5.0, 4),
+            "honor_cut": is_honor,
+            "terminal_cut": is_terminal,
+            "edge_cut": is_edge,
+            "center_cut": is_center,
+            "danger_x_all_last": round(danger / 6.0, 4),
+            "future_x_all_last": round(future_ukeire / 25.0, 4),
+            "tile_count_n": round(min(tile_count, 4) / 4.0, 4),
+            "pair_source": 1.0 if tile_count >= 2 else 0.0,
+            "triplet_source": 1.0 if tile_count >= 3 else 0.0,
+            "singleton_cut": 1.0 if tile_count == 1 else 0.0,
+            "adjacent_count_n": round(min(adjacent_count, 4) / 4.0, 4),
+            "gap_count_n": round(min(gap_count, 4) / 4.0, 4),
+            "connected_score_n": round(min(connected_score, 6.0) / 6.0, 4),
+            "two_sided_support": 1.0 if left1 > 0 and right1 > 0 else 0.0,
+            "isolated_cut": isolated_cut,
+        }
+        if mode == "fold":
+            feats["danger_x_fold"] = feats["danger_n"]
+            feats["max_danger_x_fold"] = feats["max_danger_n"]
+            feats["honor_x_fold"] = is_honor
+            feats["terminal_x_fold"] = is_terminal
+            feats["connected_x_fold"] = feats["connected_score_n"]
+        if mode == "neutral":
+            feats["future_x_neutral"] = feats["future_n"]
+            feats["improve_x_neutral"] = feats["improve_n"]
+            if goal == "速度优先":
+                feats["future_x_neutral_speed"] = feats["future_n"]
+                feats["improve_x_neutral_speed"] = feats["improve_n"]
+                feats["connected_x_neutral_speed"] = feats["connected_score_n"]
+                feats["two_sided_x_neutral_speed"] = feats["two_sided_support"]
+            if goal == "稳定优先":
+                feats["danger_x_neutral_stability"] = feats["danger_n"]
+                feats["max_danger_x_neutral_stability"] = feats["max_danger_n"]
+                feats["pair_x_neutral_stability"] = feats["pair_source"]
+                feats["connected_x_neutral_stability"] = feats["connected_score_n"]
+        if mode == "push":
+            feats["future_x_push"] = feats["future_n"]
+            if goal == "打点优先":
+                feats["route_x_push_value"] = feats["route_n"]
+                feats["value_x_push_value"] = feats["value_n"]
+                feats["pair_x_push_value"] = feats["pair_source"]
+                feats["connected_x_push_value"] = feats["connected_score_n"]
+        return feats
+
+    def close_choice_model_score(self, item, mode, goal, ctx):
+        model = load_close_choice_model()
+        if not model:
+            return None
+        weights = model.get("weights") or {}
+        if not weights:
+            return None
+        score = float(model.get("bias", 0.0) or 0.0)
+        for name, value in self.close_choice_model_features(item, mode, goal, ctx).items():
+            score += float(weights.get(name, 0.0) or 0.0) * float(value)
+        return round(score, 4)
+
+    def close_choice_future_metrics(self, item):
+        counts = hand_to_counts(self.hand)
+        counts[tile_to_index(item["tile"])] -= 1
+        advance_ukeire, improvement_ukeire, future_ukeire = future_hand_progress(
+            counts,
+            item["shanten"],
+            item["ukeire"],
+            self.open_melds,
+            self.visible_counts,
+            self.dora_indicators,
+            self.seat_wind(),
+            self.round_wind(),
+        )
+        return advance_ukeire, improvement_ukeire, future_ukeire
+
+    def close_choice_resolver_key(self, item, mode, goal, ctx, model_active=False):
+        danger = self.tile_danger_score(item["tile"]) if self.riichi_seats else 0.0
+        max_danger = self.max_seat_danger(item["tile"]) if self.riichi_seats else 0.0
+        safe_keep = item.get("safe_tile_keep_count", 0)
+        future_ukeire = item.get("future_ukeire", 0.0)
+        improvement_ukeire = item.get("improvement_ukeire", 0.0)
+        route_commitment = item.get("route_commitment", 0.0)
+        route_score = item.get("route_score", 0.0)
+        flex_score = self.endgame_tile_flex_score(item["tile"]) if ctx.get("is_all_last") else 0
+        turn = ctx.get("turn") or 0
+        model_score = self.close_choice_model_score(item, mode, goal, ctx) if model_active else None
+
+        if (
+            ctx.get("is_all_last")
+            and ctx.get("place") in (1, 4)
+            and mode == "push"
+            and goal == "打点优先"
+        ):
+            # In all-last value-push spots, refined reruns often differ not on
+            # attack/defense mode but on which cut preserves better scoring
+            # continuations one step later.
+            base = (
+                round(future_ukeire, 2),
+                round(improvement_ukeire, 2),
+                round(route_score, 2),
+                round(item.get("hand_value", 0.0), 2),
+                0 if item.get("breaks_all_safety") else 1,
+                safe_keep,
+                -round(max_danger, 2),
+                -round(danger, 2),
+                round(item.get("mode_score", 0.0), 2),
+                round(item.get("efficiency_score", 0.0), 2),
+                flex_score,
+                self.close_choice_tile_tiebreak(item["tile"]),
+            )
+            return ((round(model_score, 4),) + base) if model_score is not None else base
+
+        if (
+            ctx.get("is_all_last")
+            and ctx.get("place") in (1, 4)
+            and mode == "neutral"
+            and goal == "速度优先"
+            and ctx.get("pressure", 0) >= 4
+        ):
+            # Tenhou endgame samples add another recurring family:
+            # same neutral/speed plan, but refined lookahead prefers the cut
+            # that keeps faster one-step continuations without giving up the
+            # final retreat path. Keep safety first, but break ties with future
+            # speed before generic tile-flex heuristics.
+            base = (
+                0 if item.get("breaks_all_safety") else 1,
+                safe_keep,
+                round(future_ukeire, 2),
+                round(improvement_ukeire, 2),
+                -round(max_danger, 2),
+                -round(danger, 2),
+                round(route_score, 2),
+                round(item.get("mode_score", 0.0), 2),
+                round(item.get("efficiency_score", 0.0), 2),
+                flex_score,
+                self.close_choice_tile_tiebreak(item["tile"]),
+            )
+            return ((round(model_score, 4),) + base) if model_score is not None else base
+
+        if mode == "fold" and ctx.get("pressure", 0) >= 4 and (turn >= 12 or ctx.get("is_all_last")):
+            # In late-round fold spots, the refined path more often chooses the
+            # immediately safer discard first, then worries about keeping one
+            # extra fallback tile. Prioritizing danger before tile-flex reduces
+            # some 1m/9m-like drift in pure defense decisions.
+            base = (
+                0 if item.get("breaks_all_safety") else 1,
+                -round(max_danger, 2),
+                -round(danger, 2),
+                safe_keep,
+                flex_score,
+                round(future_ukeire, 2),
+                round(improvement_ukeire, 2),
+                round(item.get("mode_score", 0.0), 2),
+                round(item.get("efficiency_score", 0.0), 2),
+                self.close_choice_tile_tiebreak(item["tile"]),
+            )
+            return ((round(model_score, 4),) + base) if model_score is not None else base
+
+        # Lexicographic comparison works better than one blended score here:
+        # preserve retreat, prefer lower exposure, then break ties with future shape.
+        base = (
+            0 if item.get("breaks_all_safety") else 1,
+            safe_keep,
+            flex_score,
+            -round(max_danger, 2),
+            -round(danger, 2),
+            round(future_ukeire, 2),
+            round(improvement_ukeire, 2),
+            round(route_commitment, 2),
+            round(route_score, 2),
+            round(item.get("mode_score", 0.0), 2),
+            round(item.get("efficiency_score", 0.0), 2),
+            self.close_choice_tile_tiebreak(item["tile"]),
+        )
+        return ((round(model_score, 4),) + base) if model_score is not None else base
+
+    def apply_close_choice_resolver(self, options, mode, goal, ctx):
+        if len(options) < 2:
+            return options
+        best = options[0]
+        second = options[1]
+        if not self.close_choice_resolver_active(mode, goal, ctx, best, second):
+            return options
+        model_active = self.close_choice_model_active(mode, goal, ctx, best, second)
+
+        candidates = options[: min(3, len(options))]
+        should_probe_future = (
+            ctx.get("is_all_last")
+            and ctx.get("place") in (1, 4)
+            and (
+                (
+                    mode == "neutral"
+                    and goal == "稳定优先"
+                    and abs((best.get("mode_score") or 0.0) - (second.get("mode_score") or 0.0)) <= 2.5
+                )
+                or (
+                    mode == "push"
+                    and goal == "打点优先"
+                    and abs((best.get("mode_score") or 0.0) - (second.get("mode_score") or 0.0)) <= 3.0
+                )
+            )
+        )
+        if model_active:
+            should_probe_future = True
+        if should_probe_future and all(
+            (item.get("future_ukeire", 0.0) == 0.0 and item.get("improvement_ukeire", 0) == 0)
+            for item in candidates
+        ):
+            for item in candidates:
+                advance_ukeire, improvement_ukeire, future_ukeire = self.close_choice_future_metrics(item)
+                item["advance_ukeire"] = max(item.get("advance_ukeire", 0), advance_ukeire)
+                item["improvement_ukeire"] = max(item.get("improvement_ukeire", 0), improvement_ukeire)
+                item["future_ukeire"] = max(item.get("future_ukeire", 0.0), future_ukeire)
+        scored = []
+        for item in candidates:
+            resolver_key = self.close_choice_resolver_key(item, mode, goal, ctx, model_active=model_active)
+            scored.append((resolver_key, item))
+            item["close_choice_score"] = resolver_key
+            if model_active:
+                item["close_choice_model_score"] = self.close_choice_model_score(item, mode, goal, ctx)
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        chosen = scored[0][1]
+        if chosen is best:
+            return options
+
+        self.last_discard_policy_note = {
+            "reason": "close_choice_model" if model_active else "close_choice_resolver",
+            "from_tile": best["tile"],
+            "to_tile": chosen["tile"],
+            "mode": mode,
+            "goal": goal,
+            "from_close_choice_score": best.get("close_choice_score"),
+            "to_close_choice_score": chosen.get("close_choice_score"),
+            "from_mode_score": round(best.get("mode_score", 0.0), 2),
+            "to_mode_score": round(chosen.get("mode_score", 0.0), 2),
+        }
+        return [chosen] + [item for item in options if item is not chosen]
 
     def annotate_discard_risk_patterns(self, options):
         if not options:
             return options
         current_shanten = self.current_shanten()
+        current_counts = hand_to_counts(self.hand)
+        current_safe_tiles = set(self.effective_safe_tiles())
         for item in options:
             tags = []
             danger = self.tile_danger_score(item["tile"]) if self.riichi_seats else 0.0
             max_danger = self.max_seat_danger(item["tile"]) if self.riichi_seats else 0.0
+            counts = current_counts[:]
+            counts[tile_to_index(item["tile"])] -= 1
+            route_profile = detect_hand_routes(
+                counts,
+                self.dora_indicators,
+                self.seat_wind(),
+                self.round_wind(),
+                self.open_melds,
+            )
             if item["shanten"] <= current_shanten:
                 if item["shanten"] == 0 and item["ukeire"] >= 6:
                     tags.append("高质量听牌")
@@ -1045,7 +1948,24 @@ class LiveGameState:
                 tags.append("单家高危险")
             if item.get("hand_value", 0.0) >= 4.5:
                 tags.append("高打点路线")
+            if route_profile["route_commitment"] >= 1.3:
+                tags.extend(route_profile["tags"][:2])
             item["risk_reward_tags"] = tags[:4]
+            safe_keep_count = 0
+            if current_safe_tiles:
+                remaining_safe_tiles = list(current_safe_tiles)
+                normalized_discard = normalize_tile(item["tile"])
+                removed = False
+                for safe_tile in list(remaining_safe_tiles):
+                    if normalize_tile(safe_tile) == normalized_discard and not removed:
+                        remaining_safe_tiles.remove(safe_tile)
+                        removed = True
+                safe_keep_count = len(remaining_safe_tiles)
+            item["safe_tile_keep_count"] = safe_keep_count
+            item["breaks_all_safety"] = bool(current_safe_tiles) and safe_keep_count == 0
+            item["route_tags"] = route_profile["tags"]
+            item["route_score"] = route_profile["route_score"]
+            item["route_commitment"] = route_profile["route_commitment"]
         return options
 
     def discard_push_template(self, item):
@@ -1253,9 +2173,16 @@ class LiveGameState:
                         score += 0.15
                     elif danger_gap <= 0.2:
                         score -= 0.05
+                mode_gap = abs(best.get("mode_score", 0.0) - second.get("mode_score", 0.0))
+                if mode_gap <= 6:
+                    score -= 0.08
+                elif mode_gap >= 18:
+                    score += 0.08
 
         if self.defensive_pressure() >= 4 and best["shanten"] > 0:
             score -= 0.05
+        if (self.last_push_fold_decision or {}).get("mode") == "neutral":
+            score -= 0.04
         return max(0.0, min(0.99, round(score, 2)))
 
     def discard_policy_note_text(self):
@@ -1278,11 +2205,17 @@ class LiveGameState:
             return f"策略提示: 同向听下为了降低放铳风险，改从 {from_tile} 调整为更安全的 {to_tile}。"
         if note.get("reason") == "high_pressure_safer_override":
             return f"策略提示: 场压过高时优先安全，改从 {from_tile} 调整为更安全的 {to_tile}。"
+        if note.get("reason") == "close_choice_model":
+            return f"策略提示: 终盘接近局面下，轻量评估器改从 {from_tile} 调整为 {to_tile}，优先保留更优的顺位与后续平衡。"
+        if note.get("reason") == "close_choice_resolver":
+            return f"策略提示: 候选非常接近，终盘边缘局面下改从 {from_tile} 调整为 {to_tile}，优先保留退路和后续弹性。"
         return None
 
     def build_decision_snapshot(self, trigger, options):
         score_ctx = self.score_context()
         best = options[0] if options else None
+        push_fold = self.last_push_fold_decision or {}
+        candidate_limit = max(3, int(getattr(self, "snapshot_candidate_limit", 12) or 12))
         snapshot = {
             "round": self.round_label,
             "trigger": trigger,
@@ -1309,6 +2242,10 @@ class LiveGameState:
             "riichi_state": self.riichi_state(),
             "pressure": self.pressure_label(),
             "tilt": self.strategic_tilt(),
+            "push_fold": push_fold.get("mode"),
+            "hand_goal": push_fold.get("goal"),
+            "push_fold_reason": push_fold.get("reason_tag"),
+            "related_info_missing": push_fold.get("related_info_missing", []),
             "visible_counts": {index_to_tile(i): count for i, count in enumerate(self.visible_counts) if count},
             "effective_safe_tiles": self.effective_safe_tiles(),
             "effective_safe_tiles_display": [display_tile(tile) for tile in self.effective_safe_tiles()],
@@ -1321,7 +2258,7 @@ class LiveGameState:
             },
             "candidates": [],
         }
-        for item in options[:3]:
+        for item in options[:candidate_limit]:
             snapshot["candidates"].append({
                 "tile": item["tile"],
                 "tile_display": display_tile(item["tile"]),
@@ -1332,7 +2269,16 @@ class LiveGameState:
                 "future_ukeire": item.get("future_ukeire"),
                 "hand_value": item.get("hand_value"),
                 "danger": self.tile_danger_score(item["tile"]) if self.riichi_seats else 0.0,
+                "max_danger": self.max_seat_danger(item["tile"]) if self.riichi_seats else 0.0,
+                "mode_score": item.get("mode_score"),
+                "efficiency_score": item.get("efficiency_score"),
                 "risk_reward_tags": item.get("risk_reward_tags", []),
+                "route_tags": item.get("route_tags", []),
+                "route_score": item.get("route_score"),
+                "route_commitment": item.get("route_commitment"),
+                "safe_tile_keep_count": item.get("safe_tile_keep_count"),
+                "breaks_all_safety": item.get("breaks_all_safety"),
+                "close_choice_model_score": item.get("close_choice_model_score"),
                 "seat_dangers": {
                     str(seat): self.seat_tile_danger(seat, item["tile"])
                     for seat in sorted(self.riichi_seats)
@@ -1460,13 +2406,85 @@ class LiveGameState:
             bonus += candidate.get("future_ukeire", 0.0) * 0.08
         return round(bonus, 2)
 
+    def call_route_gain(self, candidate):
+        before_routes = detect_hand_routes(
+            hand_to_counts(self.hand),
+            self.dora_indicators,
+            self.seat_wind(),
+            self.round_wind(),
+            self.open_melds,
+        )
+        after_routes = detect_hand_routes(
+            candidate["counts_after_call"],
+            self.dora_indicators,
+            self.seat_wind(),
+            self.round_wind(),
+            self.open_melds + 1,
+        )
+        score_gain = after_routes["route_score"] - before_routes["route_score"]
+        commitment_gain = after_routes["route_commitment"] - before_routes["route_commitment"]
+        return round(score_gain * 1.5 + commitment_gain * 1.2, 2), after_routes
+
+    def call_style_bonus(self, candidate, op_type=None, called_tile=None):
+        route_tags = set(candidate.get("route_profile_after_call", {}).get("tags", []))
+        yaku_tags = set(candidate.get("yaku_profile", {}).get("tags", []))
+        bonus = 0.0
+        normalized = normalize_tile(called_tile) if called_tile else None
+        if op_type == 2:
+            if "断幺路线" in route_tags or "断幺" in yaku_tags:
+                bonus += 1.25
+            if "染手路线" in route_tags or "一色寄" in route_tags or "染手" in yaku_tags:
+                bonus += 0.85
+            if normalized and normalized[1] == "z":
+                bonus -= 0.8
+            if candidate.get("route_profile_after_call", {}).get("route_commitment", 0.0) < 0.8:
+                bonus -= 0.75
+        elif op_type == 3:
+            if normalized and self.is_value_honor(normalized):
+                bonus += 1.45
+            if "役牌路线" in route_tags or any(tag.startswith("役牌") or tag.startswith("鸣入役牌") for tag in yaku_tags):
+                bonus += 1.1
+            if "对对寄" in route_tags:
+                bonus += 0.75
+            if "断幺路线" not in route_tags and normalized and normalized[1] != "z" and candidate.get("route_profile_after_call", {}).get("route_commitment", 0.0) < 0.9:
+                bonus -= 0.55
+        return round(bonus, 2)
+
+    def call_first_discard_penalty(self, candidate):
+        discard_tile = candidate.get("tile")
+        if not discard_tile:
+            return 0.0
+        max_danger = self.max_seat_danger(discard_tile)
+        if max_danger <= 0.9:
+            return -0.35
+        if max_danger <= 1.4:
+            return 0.0
+        if max_danger <= 2.0:
+            return 0.8
+        return 1.6 + (max_danger - 2.0) * 0.85
+
+    def call_commitment_level(self, candidate):
+        route_commitment = candidate.get("route_profile_after_call", {}).get("route_commitment", 0.0)
+        yaku_score = candidate.get("yaku_profile", {}).get("score", 0.0)
+        if candidate["shanten"] == 0:
+            return "high"
+        if route_commitment >= 1.5 or yaku_score >= 2.2:
+            return "high"
+        if route_commitment >= 0.9 or yaku_score >= 1.2:
+            return "medium"
+        return "low"
+
     def call_rejection_template(self, candidate):
         breakdown = candidate.get("call_breakdown", {})
         danger_loss = breakdown.get("danger_loss", 0.0)
         yaku_gain = breakdown.get("yaku_gain", 0.0)
         tenpai_bonus = breakdown.get("tenpai_bonus", 0.0)
+        route_gain = breakdown.get("route_gain", 0.0)
+        safety_loss = breakdown.get("safety_loss", 0.0)
         if danger_loss >= 2.0:
             return "high_danger_loss"
+        if safety_loss >= 2.2 and route_gain < 1.8:
+            return "safety_collapse"
         if danger_loss >= 1.2 and tenpai_bonus < 2.0:
             return "danger_over_speed"
         if yaku_gain < 4.0 and tenpai_bonus < 2.0:
@@ -1479,6 +2497,7 @@ class LiveGameState:
         breakdown = candidate.get("call_breakdown", {})
         yaku_score = candidate.get("yaku_profile", {}).get("score", 0.0)
         tags = set(candidate.get("yaku_profile", {}).get("tags", []))
+        route_tags = set(candidate.get("route_profile_after_call", {}).get("tags", []))
         tanyao_flush_like = "断幺" in tags and any(tag in tags for tag in ("一色寄り", "染手"))
         value_honor_like = any(tag.startswith("役牌对") or tag.startswith("鸣入役牌") for tag in tags)
         if self.riichi_seats:
@@ -1497,10 +2516,10 @@ class LiveGameState:
             return True, "aggressive_push"
         if (
             op_type == 2
-            and tanyao_flush_like
+            and (tanyao_flush_like or "断幺路线" in route_tags or "染手路线" in route_tags)
             and breakdown.get("tenpai_bonus", 0.0) >= 2.8
             and breakdown.get("danger_loss", 0.0) <= 0.8
-            and candidate.get("call_score", 0.0) >= 6.8
+            and candidate.get("call_score", 0.0) >= 6.6
         ):
             return True, "chi_pattern_release"
         if (
@@ -1512,6 +2531,13 @@ class LiveGameState:
         ):
             if breakdown.get("tenpai_bonus", 0.0) >= 3.2 and candidate.get("call_score", 0.0) >= 7.2:
                 return True, "peng_tenpai_release"
+            return True, "peng_pattern_release"
+        if (
+            op_type == 3
+            and "对对寄" in route_tags
+            and candidate.get("call_score", 0.0) >= 5.8
+            and breakdown.get("danger_loss", 0.0) <= 1.0
+        ):
             return True, "peng_pattern_release"
         if (
             candidate.get("call_score", 0.0) >= 6.6
@@ -1534,6 +2560,8 @@ class LiveGameState:
         template = self.call_rejection_template(candidate)
         if template == "high_danger_loss":
             return f"不建议 {label} {display_tile(called_tile)}，这手副露后的危险损失过大，明显不值得强行提速。"
+        if template == "safety_collapse":
+            return f"不建议 {label} {display_tile(called_tile)}，这手一鸣会明显拆掉退路，但路线收益还不够高。"
         if template == "danger_over_speed":
             return f"不建议 {label} {display_tile(called_tile)}，当前风险明显高于提速收益，先保留门清和防守空间更稳。"
         if template == "weak_value_path":
@@ -1545,6 +2573,10 @@ class LiveGameState:
     def call_plan_score(self, candidate, current_shanten, current_ukeire, called_tile=None, used_tiles=None):
         used_tiles = used_tiles or []
         yaku_profile = self.open_yaku_profile(candidate["counts_after_call"], called_tile)
+        route_gain, route_profile = self.call_route_gain(candidate)
+        candidate["route_profile_after_call"] = route_profile
+        style_bonus = self.call_style_bonus(candidate, candidate.get("op_type"), called_tile)
+        first_discard_penalty = self.call_first_discard_penalty(candidate)
         breakdown = {
             "shanten_gain": (current_shanten - candidate["shanten"]) * 11.0,
             "ukeire_gain": max(0, candidate["ukeire"] - current_ukeire) * 0.6,
@@ -1552,10 +2584,13 @@ class LiveGameState:
             "improvement_gain": candidate.get("improvement_ukeire", 0) * 0.08,
             "hand_value_gain": candidate.get("hand_value", 0.0) * 1.4,
             "yaku_gain": yaku_profile["score"] * 2.1,
+            "route_gain": route_gain,
+            "style_bonus": style_bonus,
             "tenpai_bonus": self.call_tenpai_bonus(candidate),
             "dora_call_bonus": 0.0,
             "safety_loss": 0.0,
             "danger_loss": 0.0,
+            "first_discard_penalty": first_discard_penalty,
         }
         if called_tile and normalize_tile(called_tile) in dora_set(self.dora_indicators):
             breakdown["dora_call_bonus"] = 1.0
@@ -1569,10 +2604,13 @@ class LiveGameState:
             + breakdown["improvement_gain"]
             + breakdown["hand_value_gain"]
             + breakdown["yaku_gain"]
+            + breakdown["route_gain"]
+            + breakdown["style_bonus"]
             + breakdown["tenpai_bonus"]
             + breakdown["dora_call_bonus"]
             - breakdown["safety_loss"]
-            - breakdown["danger_loss"],
+            - breakdown["danger_loss"]
+            - breakdown["first_discard_penalty"],
             2,
         )
         breakdown = {key: round(value, 2) for key, value in breakdown.items()}
@@ -1610,6 +2648,7 @@ class LiveGameState:
             if not options:
                 continue
             candidate = options[0].copy()
+            candidate["op_type"] = op_type
             candidate["combo"] = combo
             candidate["used_tiles"] = used_tiles
             candidate["counts_after_call"] = hand_to_counts(remaining)
@@ -1620,6 +2659,7 @@ class LiveGameState:
                 called_tile,
                 used_tiles,
             )
+            candidate["commitment_level"] = self.call_commitment_level(candidate)
             if (
                 best is None
                 or candidate["shanten"] < best["shanten"]
@@ -1658,6 +2698,27 @@ class LiveGameState:
             return None
 
         label = operation_type_label(op_type)
+        if (
+            best.get("call_breakdown", {}).get("safety_loss", 0.0) >= 2.2
+            and best.get("call_breakdown", {}).get("route_gain", 0.0) < 2.0
+            and current_shanten > 0
+        ):
+            return {
+                "action": label,
+                "recommended": False,
+                "target_tile": called_tile,
+                "target_tile_display": display_tile(called_tile) if called_tile else None,
+                "combination": best.get("combo"),
+                "followup_discard": best["tile"],
+                "followup_discard_display": display_tile(best["tile"]),
+                "call_score": best.get("call_score"),
+                "call_breakdown": best.get("call_breakdown"),
+                "open_yaku_potential": best.get("yaku_profile", {}).get("score"),
+                "yaku_tags": best.get("yaku_profile", {}).get("tags", []),
+                "route_tags": best.get("route_profile_after_call", {}).get("tags", []),
+                "commitment_level": best.get("commitment_level"),
+                "reason": f"不建议 {label} {display_tile(called_tile)}，这手一鸣会明显拆安牌和退路，但路线收益还不够。"
+            }
         if self.riichi_seats and self.effective_safe_tiles() and current_shanten > 0:
             return {
                 "action": label,
@@ -1671,6 +2732,8 @@ class LiveGameState:
                 "call_breakdown": best.get("call_breakdown"),
                 "open_yaku_potential": best.get("yaku_profile", {}).get("score"),
                 "yaku_tags": best.get("yaku_profile", {}).get("tags", []),
+                "route_tags": best.get("route_profile_after_call", {}).get("tags", []),
+                "commitment_level": best.get("commitment_level"),
                 "reason": f"不建议 {label} {display_tile(called_tile)}，场上已有明确威胁，当前更应优先保留退路。",
             }
         if best["shanten"] < current_shanten:
@@ -1686,6 +2749,8 @@ class LiveGameState:
                 "call_breakdown": best.get("call_breakdown"),
                 "open_yaku_potential": best.get("yaku_profile", {}).get("score"),
                 "yaku_tags": best.get("yaku_profile", {}).get("tags", []),
+                "route_tags": best.get("route_profile_after_call", {}).get("tags", []),
+                "commitment_level": best.get("commitment_level"),
                 "reason": (
                     f"建议 {label} {display_tile(called_tile)}，可把向听从 {current_shanten} 压到 {best['shanten']}，"
                     f"鸣后优先切 {display_tile(best['tile'])}。"
@@ -1704,6 +2769,8 @@ class LiveGameState:
                 "call_breakdown": best.get("call_breakdown"),
                 "open_yaku_potential": best.get("yaku_profile", {}).get("score"),
                 "yaku_tags": best.get("yaku_profile", {}).get("tags", []),
+                "route_tags": best.get("route_profile_after_call", {}).get("tags", []),
+                "commitment_level": best.get("commitment_level"),
                 "reason": f"可碰 {display_tile(called_tile)}，是役牌/风牌碰牌，速度和打点都不差；保守建议可以碰。",
             }
         allow_same_shanten, same_shanten_reason = self.should_allow_same_shanten_call(best, op_type)
@@ -1720,6 +2787,8 @@ class LiveGameState:
                 "call_breakdown": best.get("call_breakdown"),
                 "open_yaku_potential": best.get("yaku_profile", {}).get("score"),
                 "yaku_tags": best.get("yaku_profile", {}).get("tags", []),
+                "route_tags": best.get("route_profile_after_call", {}).get("tags", []),
+                "commitment_level": best.get("commitment_level"),
                 "reason": f"不建议 {label} {display_tile(called_tile)}，同向听鸣牌需要承担明显放铳风险，这里不值得强行提速。",
             }
         if best["shanten"] == current_shanten and allow_same_shanten:
@@ -1749,6 +2818,8 @@ class LiveGameState:
                 "call_breakdown": best.get("call_breakdown"),
                 "open_yaku_potential": best.get("yaku_profile", {}).get("score"),
                 "yaku_tags": best.get("yaku_profile", {}).get("tags", []),
+                "route_tags": best.get("route_profile_after_call", {}).get("tags", []),
+                "commitment_level": best.get("commitment_level"),
                 "reason": reason,
             }
         if (
@@ -1771,6 +2842,8 @@ class LiveGameState:
                 "call_breakdown": best.get("call_breakdown"),
                 "open_yaku_potential": best.get("yaku_profile", {}).get("score"),
                 "yaku_tags": best.get("yaku_profile", {}).get("tags", []),
+                "route_tags": best.get("route_profile_after_call", {}).get("tags", []),
+                "commitment_level": best.get("commitment_level"),
                 "reason": f"可 {label} {display_tile(called_tile)}，向听不变但鸣后速度/役种收益更好，优先切 {display_tile(best['tile'])}。",
             }
         return {
@@ -1785,6 +2858,8 @@ class LiveGameState:
             "call_breakdown": best.get("call_breakdown"),
             "open_yaku_potential": best.get("yaku_profile", {}).get("score"),
             "yaku_tags": best.get("yaku_profile", {}).get("tags", []),
+            "route_tags": best.get("route_profile_after_call", {}).get("tags", []),
+            "commitment_level": best.get("commitment_level"),
             "reason": self.same_shanten_reject_reason(called_tile, label, best),
         }
 
@@ -1817,6 +2892,7 @@ class LiveGameState:
 
     def evaluate_tenpai_options(self, data):
         options = []
+        current_counts = hand_to_counts(self.hand)
         for item in data.get("tingpais") or []:
             discard_tile = item.get("tile")
             zhenting = bool(item.get("zhenting"))
@@ -1837,12 +2913,23 @@ class LiveGameState:
                 max_han = max(max_han, safe_int(info.get("count", 0)))
                 riichi_nominal = max(riichi_nominal, float(safe_int(info.get("point_rong"), 0)))
             if waits:
+                counts = current_counts[:]
+                if discard_tile:
+                    counts[tile_to_index(discard_tile)] -= 1
+                route_profile = detect_hand_routes(
+                    counts,
+                    self.dora_indicators,
+                    self.seat_wind(),
+                    self.round_wind(),
+                    self.open_melds,
+                )
                 shape = wait_shape_score(waits)
                 score = round(
                     live * 1.5
                     + shape * 3.5
                     + max_han * 1.2
                     + min(riichi_nominal / 2000.0, 3.0)
+                    + route_profile["route_score"] * 1.1
                     + (0.6 if has_yaku else -0.8),
                     2,
                 )
@@ -1855,6 +2942,9 @@ class LiveGameState:
                     "has_yaku": has_yaku,
                     "shape_score": shape,
                     "riichi_nominal": riichi_nominal,
+                    "route_tags": route_profile["tags"],
+                    "route_score": route_profile["route_score"],
+                    "route_commitment": route_profile["route_commitment"],
                     "score": score,
                 })
         options.sort(key=lambda item: (item["zhenting"], -item["score"], -item["live"], -item["max_han"]))
@@ -1868,6 +2958,7 @@ class LiveGameState:
         value += option["shape_score"] * 1.8
         value += min(option["max_han"], 5) * 0.7
         value += min(option.get("riichi_nominal", 0.0) / 4000.0, 1.5)
+        value += option.get("route_score", 0.0) * 0.65
         if self.is_dealer():
             value += 0.8
         if tilt == "积极":
@@ -1885,9 +2976,40 @@ class LiveGameState:
             value -= 0.5
         return round(value, 2)
 
+    def riichi_value_bias(self, option):
+        bias = 0.0
+        route_tags = set(option.get("route_tags", []))
+        nominal = option.get("riichi_nominal", 0.0)
+        if nominal >= 11600 or option["max_han"] >= 4:
+            bias += 2.0
+        elif nominal >= 7700 or option["max_han"] >= 3:
+            bias += 1.0
+        if "役牌路线" in route_tags or "宝牌重" in route_tags:
+            bias += 0.45
+        if "七对路线" in route_tags:
+            bias += 0.35
+        return round(bias, 2)
+
+    def riichi_risk_bias(self, option):
+        score_ctx = self.score_context() or {}
+        bias = 0.0
+        if self.defensive_pressure() >= 4:
+            bias += 1.0
+        elif self.riichi_seats:
+            bias += 0.45
+        if self.is_all_last() and score_ctx.get("place") == 1 and score_ctx.get("last_gap", 0) > 4000:
+            bias += 1.0
+        if option["live"] <= 2:
+            bias += 0.7
+        if option["shape_score"] <= 0.8:
+            bias += 0.65
+        return round(bias, 2)
+
     def riichi_decision_template(self, option, push_value):
         score_ctx = self.score_context() or {}
         tilt = self.strategic_tilt()
+        value_bias = self.riichi_value_bias(option)
+        risk_bias = self.riichi_risk_bias(option)
         if option["zhenting"]:
             return "furiten_damaten"
         if self.open_melds:
@@ -1905,6 +3027,8 @@ class LiveGameState:
             return "value_damaten"
         if option["max_han"] >= 4 or option.get("riichi_nominal", 0) >= 11600:
             return "high_value_damaten"
+        if value_bias >= 1.6 and risk_bias >= 1.0:
+            return "value_damaten"
         if self.is_dealer() and option["live"] >= 4 and option["shape_score"] >= 1.2 and option["max_han"] <= 3:
             return "dealer_riichi"
         if tilt == "积极" and option["live"] >= 3 and option["shape_score"] >= 1.0:
@@ -1913,6 +3037,10 @@ class LiveGameState:
             return "good_shape_riichi"
         if self.riichi_seats and push_value <= 2.4:
             return "threat_riichi_check"
+        if self.riichi_seats and option["live"] <= 2 and option["shape_score"] <= 0.9 and option["max_han"] >= 2:
+            return "threat_damaten"
+        if risk_bias >= 1.8 and value_bias >= 1.0:
+            return "threat_damaten"
         if push_value >= 5.2:
             return "push_value_riichi"
         return "default_riichi"
@@ -1954,6 +3082,8 @@ class LiveGameState:
                     "shape_score": item["shape_score"],
                     "max_han": item["max_han"],
                     "riichi_nominal": item.get("riichi_nominal", 0.0),
+                    "route_tags": item.get("route_tags", []),
+                    "route_score": item.get("route_score", 0.0),
                     "score": item["score"],
                     "zhenting": item["zhenting"],
                 }
@@ -1966,6 +3096,8 @@ class LiveGameState:
         decision_template = self.riichi_decision_template(best, push_value)
         self.last_tenpai_analysis["decision_template"] = decision_template
         self.last_tenpai_analysis["push_value"] = push_value
+        self.last_tenpai_analysis["value_bias"] = self.riichi_value_bias(best)
+        self.last_tenpai_analysis["risk_bias"] = self.riichi_risk_bias(best)
         self.last_tenpai_analysis["tilt"] = tilt
         self.last_tenpai_analysis["template_note"] = self.riichi_template_note(decision_template)
         best_desc = (
@@ -2166,6 +3298,33 @@ class LiveGameState:
                 self.remove_tiles([tiles] * 4)
                 self.open_melds += 1
 
+    def sync_dora_indicators(self, doras):
+        if doras is None:
+            return
+        new_doras = list(doras or [])
+        if len(new_doras) > len(self.dora_indicators):
+            self.add_visible_tiles(new_doras[len(self.dora_indicators):])
+        self.dora_indicators = new_doras
+
+    def apply_public_angang_addgang_visibility(self, data):
+        seat = data.get("seat")
+        if seat is None:
+            return
+        tile = data.get("tiles")
+        if not isinstance(tile, str):
+            return
+        call_type = data.get("type")
+        concealed = bool(data.get("concealed"))
+        if call_type == 3:
+            self.add_visible_tile(tile)
+            self.record_meld(seat, "jiagang", [tile])
+            return
+        self.add_visible_tiles([tile] * 4)
+        meld_type = "angang" if concealed else self.normalized_meld_type(call_type)
+        self.record_meld(seat, meld_type, [tile] * 4)
+        if not concealed:
+            self.open_melds_by_seat[seat] = self.open_melds_by_seat.get(seat, 0) + 1
+
     def apply_public_call_visibility(self, data):
         tiles = list(data.get("tiles") or [])
         if not tiles:
@@ -2192,63 +3351,57 @@ class LiveGameState:
         best_danger = self.tile_danger_score(best["tile"])
         max_danger = self.max_seat_danger(best["tile"]) if self.riichi_seats else 0.0
         confidence = self.recommendation_confidence(options)
-        parts = [
-            f"推荐切 {display_tile(best['tile'])}",
-            f"向听={best['shanten']}",
-            f"进张={best['ukeire']}",
-            f"两步={best.get('advance_ukeire', 0)}/{best.get('improvement_ukeire', 0)}",
-            f"信心={confidence_label(confidence)}({confidence})",
-        ]
-        turn = self.estimated_turn()
-        if turn is not None:
-            parts.append(f"巡目~{turn}")
-        phase = self.phase_label()
-        if phase:
-            parts.append(phase)
         score_ctx = self.score_context()
-        if score_ctx:
-            parts.append(f"顺位={score_ctx['place']}")
-        parts.append("亲家" if self.is_dealer() else "子家")
         tilt = self.strategic_tilt()
-        if tilt:
-            parts.append(f"倾向={tilt}")
+        decision = self.last_push_fold_decision or {}
+        mode_map = {
+            "push": "进攻",
+            "neutral": "中间判断",
+            "fold": "守备",
+        }
+        lines = [
+            f"押引: {mode_map.get(decision.get('mode'), '中间判断')}",
+            f"目标: {decision.get('goal') or '速度优先'}",
+            (
+                f"推荐切 {display_tile(best['tile'])} "
+                f"(向听{best['shanten']}, 进张{best['ukeire']}, 两步{best.get('advance_ukeire', 0)}/{best.get('improvement_ukeire', 0)})"
+            ),
+        ]
+        reason_bits = []
+        if decision.get("mode") == "fold":
+            reason_bits.append("当前更该先保留退路")
+        elif decision.get("goal") == "打点优先":
+            reason_bits.append("当前更重视价值路线")
+        elif decision.get("goal") == "稳定优先":
+            reason_bits.append("当前更重视稳定和守备")
+        else:
+            reason_bits.append("当前优先维持速度和改良")
         if self.riichi_seats:
-            parts.append(f"危险度={self.danger_label(best_danger)}({best_danger})")
-            parts.append(f"单家峰值={round(max_danger, 1)}")
-            parts.append(f"场压={self.pressure_label()}")
-        if best["improving"]:
-            parts.append(f"改良={','.join(display_tile(tile) for tile in best['improving'][:8])}")
-        if best.get("future_ukeire"):
-            parts.append(f"后续均值={best['future_ukeire']}")
-        if best.get("risk_reward_tags"):
-            parts.append(f"标签={','.join(best['risk_reward_tags'])}")
-        lines = [" | ".join(parts)]
+            reason_bits.append(f"危险度{self.danger_label(best_danger)}({best_danger})")
+            reason_bits.append(f"单家峰值{round(max_danger, 1)}")
+        reason_bits.append(f"信心{confidence_label(confidence)}({confidence})")
+        lines.append("理由: " + "，".join(reason_bits) + "。")
         if alts:
-            alt_text = "；".join(
-                (
-                    f"{display_tile(item['tile'])} (向听{item['shanten']}, 进张{item['ukeire']}"
-                    + f", 两步{item.get('advance_ukeire', 0)}/{item.get('improvement_ukeire', 0)}"
-                    + (
-                        f", 标签{'/'.join(item.get('risk_reward_tags', []))}"
-                        if item.get("risk_reward_tags") else ""
-                    )
-                    + (
-                        f", 危险{self.tile_danger_score(item['tile'])}"
-                        if self.riichi_seats else ""
-                    )
-                    + ")"
+            best_gap = abs(best.get("mode_score", 0.0) - alts[0].get("mode_score", 0.0))
+            if alts[0]["shanten"] == best["shanten"] and best_gap <= 8:
+                lines.append(
+                    f"接近: {display_tile(alts[0]['tile'])} 也可考虑。"
                 )
+            alt_text = "；".join(
+                f"{display_tile(item['tile'])}(向听{item['shanten']},进张{item['ukeire']})"
                 for item in alts
             )
             lines.append(f"备选: {alt_text}")
+        if best.get("route_tags"):
+            lines.append("路线: " + " / ".join(best["route_tags"][:3]))
         if self.should_fold_strictly(best):
             safe_tiles = self.effective_safe_tiles()
             safe_text = ",".join(display_tile(tile) for tile in safe_tiles[:4])
             lines.append(f"撤退提示: 当前更偏向收手；手里已有相对安全牌 {safe_text}，优先考虑不押。")
-        if self.riichi_seats and max_danger >= 2.0 and best["shanten"] > 0:
-            lines.append("防守提示: 场上已有立直，当前推荐牌仍偏危险；如果有现物/字牌安牌，优先考虑撤退。")
-        if self.defensive_pressure() >= 4 and best["shanten"] > 0:
-            lines.append("押退提示: 多家威胁或后巡，当前更应重视安全度，不建议为一般进张强押。")
+        if self.riichi_seats and max_danger >= 2.0 and best["shanten"] > 0 and decision.get("mode") != "push":
+            lines.append("防守提示: 当前推荐牌仍偏危险，有现物或更安全牌时优先撤。")
+        if self.defensive_pressure() >= 4 and best["shanten"] > 0 and decision.get("mode") != "push":
+            lines.append("押退提示: 多家威胁或后巡，当前不宜为一般牌效强押。")
         push_template = self.discard_push_template(best)
         if push_template == "high_risk_tenpai_push":
             lines.append("押退提示: 这是高风险高回报的听牌推进，只有在你接受明显放铳风险时才值得继续押。")
@@ -2271,7 +3424,7 @@ class LiveGameState:
         if tilt == "保守" and self.riichi_seats and max_danger >= 1.2:
             lines.append("局况提示: 当前分数和局况更适合守成，这类牌不值得为普通进张去押。")
         if confidence < 0.55:
-            lines.append("不确定性提示: 这手规则判断优势不大，适合导出摘要后再问模型。")
+            lines.append("不确定性提示: 这手前两候选比较接近。")
         return "\n".join(lines)
 
     def effective_hand_tiles(self):
@@ -2317,6 +3470,8 @@ class LiveGameState:
             tile = data.get("tile")
             if data.get("left_tile_count") is not None:
                 self.left_tile_count = data.get("left_tile_count")
+            if data.get("doras") is not None:
+                self.sync_dora_indicators(data.get("doras"))
             if self.self_seat is None and seat is not None and tile:
                 self.self_seat = seat
                 if seat not in self.seat_names:
@@ -2328,12 +3483,13 @@ class LiveGameState:
                     self.hand.append(tile)
                 if self.hand_seeded and emit_suggestion:
                     output = self.build_suggestion(f"自摸 {display_tile(tile) if tile else '?'}")
-                    tenpai_advice = self.build_tenpai_advice(data)
-                    if tenpai_advice:
-                        output = f"{output}\n{tenpai_advice}"
-                    riichi_advice = self.build_riichi_advice(data)
-                    if riichi_advice:
-                        output = f"{output}\n{riichi_advice}"
+                    if self.include_aux_advice:
+                        tenpai_advice = self.build_tenpai_advice(data)
+                        if tenpai_advice:
+                            output = f"{output}\n{tenpai_advice}"
+                        riichi_advice = self.build_riichi_advice(data)
+                        if riichi_advice:
+                            output = f"{output}\n{riichi_advice}"
                     if output is None:
                         output = f"[live] 已识别到你的自摸 {display_tile(tile) if tile else '?'}，但本次建议被去重/状态条件跳过。"
                 elif emit_suggestion and tile:
@@ -2347,6 +3503,8 @@ class LiveGameState:
                 self.current_scores = list(data.get("scores") or self.current_scores)
             if data.get("liqibang") is not None:
                 self.liqibang = data.get("liqibang")
+            if data.get("doras") is not None:
+                self.sync_dora_indicators(data.get("doras"))
             if seat == self.self_seat:
                 if tile:
                     if self.hand_seeded:
@@ -2377,7 +3535,7 @@ class LiveGameState:
             self.pending_self_call = None
             if emit_suggestion and data.get("seat") == self.self_seat and self.can_offer_discard_suggestion():
                 output = self.build_suggestion(action_call_type_label(data.get("type")))
-            if emit_suggestion:
+            if emit_suggestion and self.include_aux_advice:
                 tenpai_advice = self.build_tenpai_advice(data)
                 if tenpai_advice:
                     output = f"{output}\n{tenpai_advice}" if output else tenpai_advice
@@ -2388,11 +3546,16 @@ class LiveGameState:
         elif name == "ActionAnGangAddGang" and isinstance(data, dict):
             tiles = data.get("tiles")
             call_type = data.get("type")
+            if data.get("doras") is not None:
+                self.sync_dora_indicators(data.get("doras"))
             if isinstance(tiles, str):
-                if call_type == 3:
-                    self.add_visible_tile(tiles)
+                if data.get("seat") != self.self_seat:
+                    self.apply_public_angang_addgang_visibility(data)
                 else:
-                    self.add_visible_tiles([tiles] * 4)
+                    if call_type == 3:
+                        self.add_visible_tile(tiles)
+                    else:
+                        self.add_visible_tiles([tiles] * 4)
             self.apply_self_angang(data)
 
         self.last_action_name = name
@@ -2466,6 +3629,7 @@ def parse_har_actions(path):
     return len(messages), outputs
 
 
+@lru_cache(maxsize=32)
 def load_manifest_index(manifest_path):
     path = Path(manifest_path)
     if not path.exists():
@@ -2481,6 +3645,26 @@ def load_manifest_index(manifest_path):
         if uuid:
             index[uuid] = row
     return index
+
+
+@lru_cache(maxsize=1)
+def load_liqi_schema():
+    return pmh.LiqiSchema(json.loads(Path("/Users/bigo/code/mj/liqi.json").read_text(encoding="utf-8")))
+
+
+@lru_cache(maxsize=1)
+def load_close_choice_model():
+    env_path = os.environ.get("MJ_CLOSE_CHOICE_MODEL_PATH")
+    path = Path(env_path) if env_path else Path("/Users/bigo/code/mj/data/archive/close_choice_model.json")
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return payload
 
 
 def discover_manifest_candidates(paipu_path):
@@ -2577,13 +3761,316 @@ def record_accounts_mapping(record):
     return seat_names
 
 
-def parse_paipu_actions(path, player_name=None, manifest_path=None, target_indices=None, max_index=None):
+TENHOU_DRAW_TAGS = "TUVW"
+TENHOU_DISCARD_TAGS = "DEFG"
+TENHOU_RED_TILE_IDS = {
+    16: "0m",
+    52: "0p",
+    88: "0s",
+}
+
+
+def looks_like_tenhou_mjlog(path):
+    suffix = Path(path).suffix.lower()
+    if suffix == ".mjlog":
+        return True
+    try:
+        with Path(path).open("r", encoding="utf-8") as fh:
+            prefix = fh.read(64).lstrip()
+    except Exception:
+        return False
+    return prefix.startswith("<mjloggm")
+
+
+def tenhou_tile_from_136(tile_id):
+    tile_id = int(tile_id)
+    if tile_id in TENHOU_RED_TILE_IDS:
+        return TENHOU_RED_TILE_IDS[tile_id]
+    base = tile_id // 4
+    if base < 9:
+        return f"{base + 1}m"
+    if base < 18:
+        return f"{base - 8}p"
+    if base < 27:
+        return f"{base - 17}s"
+    return f"{base - 26}z"
+
+
+def tenhou_scores_to_points(raw_scores):
+    if not raw_scores:
+        return []
+    return [safe_int(value, 0) * 100 for value in raw_scores]
+
+
+def tenhou_parse_names(un_elem):
+    seat_names = {}
+    for seat in range(4):
+        value = un_elem.attrib.get(f"n{seat}")
+        if value is None:
+            continue
+        seat_names[seat] = unquote(value)
+    return seat_names
+
+
+def tenhou_parse_init(init_elem, self_seat):
+    seed = [safe_int(part, 0) for part in (init_elem.attrib.get("seed") or "").split(",") if part != ""]
+    round_index = seed[0] if len(seed) >= 1 else 0
+    ben = seed[1] if len(seed) >= 2 else 0
+    liqibang = seed[2] if len(seed) >= 3 else 0
+    dora_id = seed[5] if len(seed) >= 6 else None
+    chang = round_index // 4
+    ju = safe_int(init_elem.attrib.get("oya"), round_index % 4)
+    scores = tenhou_scores_to_points((init_elem.attrib.get("ten") or "").split(","))
+    hand_ids = [safe_int(value, 0) for value in (init_elem.attrib.get(f"hai{self_seat}") or "").split(",") if value != ""]
+    tiles = [tenhou_tile_from_136(tile_id) for tile_id in hand_ids]
+    doras = [tenhou_tile_from_136(dora_id)] if dora_id is not None else []
+    return {
+        "chang": chang,
+        "ju": ju,
+        "ben": ben,
+        "liqibang": liqibang,
+        "scores": scores,
+        "tiles": tiles,
+        "doras": doras,
+        "left_tile_count": 70,
+    }
+
+
+def tenhou_source_seat(who, from_who):
+    return (who + from_who) % 4
+
+
+def tenhou_decode_meld(who, meld_value):
+    m = safe_int(meld_value, 0)
+    from_who = m & 0x3
+    source = tenhou_source_seat(who, from_who)
+
+    if m & 0x4:
+        pattern = (m & 0xFC00) >> 10
+        called_index = pattern % 3
+        pattern //= 3
+        base = (pattern // 7) * 9 + (pattern % 7)
+        tiles = [tenhou_tile_from_136((base + offset) * 4) for offset in range(3)]
+        froms = [who, who, who]
+        froms[called_index] = source
+        return {
+            "name": "ActionChiPengGang",
+            "data": {
+                "seat": who,
+                "type": 0,
+                "tiles": tiles,
+                "froms": froms,
+            },
+        }
+
+    if m & 0x18:
+        pattern = (m & 0xFE00) >> 9
+        called_index = pattern % 3
+        base = pattern // 3
+        tile = tenhou_tile_from_136(base * 4)
+        if m & 0x8:
+            froms = [who, who, who]
+            froms[called_index] = source
+            return {
+                "name": "ActionChiPengGang",
+                "data": {
+                    "seat": who,
+                    "type": 1,
+                    "tiles": [tile, tile, tile],
+                    "froms": froms,
+                },
+            }
+        return {
+            "name": "ActionAnGangAddGang",
+            "data": {
+                "seat": who,
+                "type": 3,
+                "tiles": tile,
+                "from": source,
+            },
+        }
+
+    tile = tenhou_tile_from_136(((m & 0xFF00) >> 8))
+    if from_who == 0:
+        return {
+            "name": "ActionAnGangAddGang",
+            "data": {
+                "seat": who,
+                "type": 2,
+                "tiles": tile,
+                "concealed": True,
+            },
+        }
+    froms = [who, who, who, who]
+    froms[0] = source
+    return {
+        "name": "ActionChiPengGang",
+        "data": {
+            "seat": who,
+            "type": 2,
+            "tiles": [tile, tile, tile, tile],
+            "froms": froms,
+        },
+    }
+
+
+def parse_tenhou_actions(
+    path,
+    player_name=None,
+    manifest_path=None,
+    target_indices=None,
+    max_index=None,
+    lookahead_limit=None,
+    include_aux_advice=True,
+):
+    text = Path(path).read_text(encoding="utf-8")
+    root = ET.fromstring(text)
+    state = LiveGameState()
+    if lookahead_limit is not None:
+        state.replay_lookahead_limit = max(0, int(lookahead_limit))
+    state.include_aux_advice = bool(include_aux_advice)
+
+    target_indices = set(target_indices or [])
+    outputs = []
+    event_index = -1
+    decoded_count = 0
+    left_tile_count = None
+    last_draw_tile_id = {}
+    pending_riichi = set()
+
+    for elem in root:
+        tag = elem.tag
+        if tag == "UN":
+            state.seat_names = tenhou_parse_names(elem)
+            if player_name:
+                for seat, name in state.seat_names.items():
+                    if name == player_name:
+                        state.self_seat = seat
+                        break
+            elif "Levey" in state.seat_names.values():
+                for seat, name in state.seat_names.items():
+                    if name == "Levey":
+                        state.self_seat = seat
+                        break
+            if state.self_seat is None:
+                state.self_seat = 0
+            continue
+
+        if tag == "INIT":
+            if state.self_seat is None:
+                state.self_seat = 0
+            action = {
+                "name": "ActionNewRound",
+                "data": tenhou_parse_init(elem, state.self_seat),
+            }
+            left_tile_count = action["data"].get("left_tile_count")
+        elif tag and tag[0] in TENHOU_DRAW_TAGS and tag[1:].isdigit():
+            seat = TENHOU_DRAW_TAGS.index(tag[0])
+            tile_id = safe_int(tag[1:], 0)
+            tile = tenhou_tile_from_136(tile_id)
+            left_tile_count = max((left_tile_count if left_tile_count is not None else 70) - 1, 0)
+            action = {
+                "name": "ActionDealTile",
+                "data": {
+                    "seat": seat,
+                    "tile": tile if seat == state.self_seat else None,
+                    "left_tile_count": left_tile_count,
+                },
+            }
+            last_draw_tile_id[seat] = tile_id
+        elif tag and tag[0] in TENHOU_DISCARD_TAGS and tag[1:].isdigit():
+            seat = TENHOU_DISCARD_TAGS.index(tag[0])
+            tile_id = safe_int(tag[1:], 0)
+            tile = tenhou_tile_from_136(tile_id)
+            action = {
+                "name": "ActionDiscardTile",
+                "data": {
+                    "seat": seat,
+                    "tile": tile,
+                    "moqie": last_draw_tile_id.get(seat) == tile_id,
+                    "is_liqi": seat in pending_riichi,
+                },
+            }
+            pending_riichi.discard(seat)
+        elif tag == "N":
+            action = tenhou_decode_meld(safe_int(elem.attrib.get("who"), 0), elem.attrib.get("m"))
+        elif tag == "REACH":
+            who = safe_int(elem.attrib.get("who"), 0)
+            step = safe_int(elem.attrib.get("step"), 0)
+            if step == 1:
+                pending_riichi.add(who)
+            elif step == 2:
+                state.current_scores = tenhou_scores_to_points((elem.attrib.get("ten") or "").split(","))
+                state.liqibang = (state.liqibang or 0) + 1
+            continue
+        elif tag == "DORA":
+            dora_tile = tenhou_tile_from_136(safe_int(elem.attrib.get("hai"), 0))
+            state.dora_indicators = list(state.dora_indicators or []) + [dora_tile]
+            state.add_visible_tile(dora_tile)
+            continue
+        elif tag == "AGARI":
+            score_changes = [safe_int(value, 0) for value in (elem.attrib.get("sc") or "").split(",") if value != ""]
+            if len(score_changes) >= 8:
+                state.current_scores = [score_changes[i] * 100 for i in range(0, 8, 2)]
+            action = {"name": "ActionHule", "data": dict(elem.attrib)}
+        elif tag == "RYUUKYOKU":
+            score_changes = [safe_int(value, 0) for value in (elem.attrib.get("sc") or "").split(",") if value != ""]
+            if len(score_changes) >= 8:
+                state.current_scores = [score_changes[i] * 100 for i in range(0, 8, 2)]
+            action = {"name": "ActionNoTile", "data": dict(elem.attrib)}
+        else:
+            continue
+
+        event_index += 1
+        if max_index is not None and event_index > max_index:
+            break
+        decoded_count += 1
+        emit_suggestion = (not target_indices) or (event_index in target_indices)
+        suggestion = state.apply_action(action, event_index, emit_suggestion=emit_suggestion)
+        if suggestion:
+            if target_indices and event_index not in target_indices:
+                continue
+            outputs.append({
+                "index": event_index,
+                "suggestion": suggestion,
+                "snapshot": state.last_decision_snapshot,
+                "action_plan": state.last_action_plan,
+                "tenpai_analysis": state.last_tenpai_analysis,
+            })
+    return decoded_count, outputs
+
+
+def parse_paipu_actions(
+    path,
+    player_name=None,
+    manifest_path=None,
+    target_indices=None,
+    max_index=None,
+    lookahead_limit=None,
+    include_aux_advice=True,
+):
+    if looks_like_tenhou_mjlog(path):
+        return parse_tenhou_actions(
+            path,
+            player_name=player_name,
+            manifest_path=manifest_path,
+            target_indices=target_indices,
+            max_index=max_index,
+            lookahead_limit=lookahead_limit,
+            include_aux_advice=include_aux_advice,
+        )
     record = json.loads(Path(path).read_text(encoding="utf-8"))
     uuid = ((record.get("head") or {}).get("uuid")) or Path(path).stem
-    manifest_row = resolve_manifest_row(path, uuid, manifest_path)
-    players = manifest_row.get("players") or []
     record_seat_names = record_accounts_mapping(record)
+    manifest_row = {}
+    players = []
+    if not record_seat_names:
+        manifest_row = resolve_manifest_row(path, uuid, manifest_path)
+        players = manifest_row.get("players") or []
     state = LiveGameState()
+    if lookahead_limit is not None:
+        state.replay_lookahead_limit = max(0, int(lookahead_limit))
+    state.include_aux_advice = bool(include_aux_advice)
     if record_seat_names:
         state.seat_names = dict(sorted(record_seat_names.items()))
     elif players:
@@ -2605,7 +4092,7 @@ def parse_paipu_actions(path, player_name=None, manifest_path=None, target_indic
     else:
         state.self_seat = 0
 
-    schema = pmh.LiqiSchema(json.loads(Path("/Users/bigo/code/mj/liqi.json").read_text(encoding="utf-8")))
+    schema = load_liqi_schema()
     outputs = []
     actions = ((record.get("game_detail_records") or {}).get("actions") or [])
     decoded_count = 0
@@ -2623,7 +4110,8 @@ def parse_paipu_actions(path, player_name=None, manifest_path=None, target_indic
         if not action:
             continue
         decoded_count += 1
-        suggestion = state.apply_action(action, index)
+        emit_suggestion = (not target_indices) or (index in target_indices)
+        suggestion = state.apply_action(action, index, emit_suggestion=emit_suggestion)
         if suggestion:
             if target_indices and index not in target_indices:
                 continue
@@ -2635,6 +4123,14 @@ def parse_paipu_actions(path, player_name=None, manifest_path=None, target_indic
                 "tenpai_analysis": state.last_tenpai_analysis,
             })
     return decoded_count, outputs
+
+
+def clear_replay_caches():
+    _total_shanten_cached.cache_clear()
+    _ukeire_for_counts_cached.cache_clear()
+    _hand_value_score_cached.cache_clear()
+    _shallow_best_hand_metrics_cached.cache_clear()
+    _future_hand_progress_cached.cache_clear()
 
 
 def write_snapshot_jsonl(snapshot_path, outputs):
@@ -2653,12 +4149,15 @@ def write_snapshot_jsonl(snapshot_path, outputs):
 
 
 def run_once(path, snapshot_jsonl=None):
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    if isinstance(raw, dict) and (raw.get("game_detail_records") or {}).get("actions"):
+    if looks_like_tenhou_mjlog(path):
         total_messages, outputs = parse_paipu_actions(path)
     else:
-        total_messages, outputs = parse_har_actions(path)
-    print(f"HAR: {path}")
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        if isinstance(raw, dict) and (raw.get("game_detail_records") or {}).get("actions"):
+            total_messages, outputs = parse_paipu_actions(path)
+        else:
+            total_messages, outputs = parse_har_actions(path)
+    print(f"Replay: {path}")
     print(f"Messages: {total_messages}")
     if snapshot_jsonl:
         write_snapshot_jsonl(snapshot_jsonl, outputs)

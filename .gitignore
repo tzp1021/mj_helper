@@ -1,0 +1,6 @@
+asset_preview/
+data/
+tools/
+tmp/
+.DS_Store
+**/.DS_Store

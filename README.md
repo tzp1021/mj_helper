@@ -92,6 +92,7 @@ python3 /Users/bigo/code/mj/tools/analyze_aligned_paipu.py \
   /Users/bigo/code/mj/data/paipu_exports \
   --player-name Levey \
   --max-record-index 500 \
+  --summary-json /Users/bigo/code/mj/data/archive/latest_aligned_summary.json \
   --summary-only \
   --progress
 ```
@@ -140,6 +141,7 @@ python3 tools/analyze_aligned_paipu.py \
   data/paipu_exports \
   --player-name Levey \
   --max-record-index 500 \
+  --summary-json data/archive/latest_aligned_summary.json \
   --summary-only
 ```
 
@@ -149,14 +151,14 @@ python3 tools/analyze_aligned_paipu.py \
 files: 20
 missing_paipu_count: 0
 discard_matched: 84
-discard_actual_match: 49 / 84 = 58.3%
+discard_actual_match: 51 / 84 = 60.7%
 seer_actual_match: 4 / 84 = 4.8%
 consensus_mismatch_count: 3
 ```
 
 这个结果的解释：
 
-- 当前助手在这些样本里和实战选择贴合度不错。
+- 当前助手在这些样本里和实战选择贴合度不错，而且新版规则重跑后略有提升。
 - Seer top 和实战实际出牌的一致率很低，说明不能把 Seer top 当作单点标准答案。
 - 高价值共识错例只有 `3` 个，数量还不足以支撑大幅改规则。
 - 目前更适合继续积累 aligned 数据，而不是为了少数错例强行调参。
