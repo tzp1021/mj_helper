@@ -1,0 +1,20 @@
+.github/workflows/ci.yml
+  s_69bc95baf6aea0::t_6a94b001eac427 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.12",
+  "base_commit_sha": "af43e6b85d5b6fef75d904c598fc6884c6b4a9aa",
+  "prompts": {},
+  "logical_commit_id": "af43e6b85d5b6fef75d904c598fc6884c6b4a9aa",
+  "sessions": {
+    "s_69bc95baf6aea0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e8250-1f1e-79f2-996a-31bdff78b8c6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "tangzhipeng <tangzhipeng@bigo.sg>"
+    }
+  }
+}
