@@ -1,0 +1,229 @@
+[
+  {
+    "name": "high_value_poor_shape_damaten",
+    "description": "高打点愚形应偏默听。",
+    "state": {
+      "self_seat": 0,
+      "hand": ["1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m","1m"],
+      "dora_indicators": ["4p"],
+      "open_melds": 0,
+      "visible_counts": {"3m": 3, "7m": 2},
+      "riichi_seats": [],
+      "riichi_event_index": {},
+      "open_melds_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
+      "discards_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "discard_meta_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "melds_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "current_scores": [25000,25000,25000,25000],
+      "left_tile_count": 28,
+      "chang": 0,
+      "ju": 0
+    },
+    "data": {
+      "tingpais": [
+        {
+          "tile": "1m",
+          "zhenting": false,
+          "infos": [
+            {"tile": "3m", "count": 4, "haveyi": true, "point_rong": 12000}
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "decision_template": "value_damaten"
+    }
+  },
+  {
+    "name": "good_shape_low_value_riichi",
+    "description": "好形低打点门清应偏立直。",
+    "state": {
+      "self_seat": 0,
+      "hand": ["2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m","2m"],
+      "dora_indicators": ["4p"],
+      "open_melds": 0,
+      "visible_counts": {"3p": 1, "6p": 0},
+      "riichi_seats": [],
+      "riichi_event_index": {},
+      "open_melds_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
+      "discards_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "discard_meta_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "melds_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "current_scores": [25000,25000,25000,25000],
+      "left_tile_count": 28,
+      "chang": 0,
+      "ju": 0
+    },
+    "data": {
+      "tingpais": [
+        {
+          "tile": "2m",
+          "zhenting": false,
+          "infos": [
+            {"tile": "3p", "count": 1, "haveyi": true, "point_rong": 2600},
+            {"tile": "6p", "count": 1, "haveyi": true, "point_rong": 2600}
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "decision_template": "push_value_riichi"
+    }
+  },
+  {
+    "name": "all_last_first_place_damaten",
+    "description": "南4一位且领先时，普通高打点听牌应偏默听守顺位。",
+    "state": {
+      "self_seat": 0,
+      "hand": ["3m","3m","3m","4m","4m","4m","5p","5p","5p","2s","2s","2s","5z","5z"],
+      "dora_indicators": ["7p"],
+      "open_melds": 0,
+      "visible_counts": {"4s": 1},
+      "riichi_seats": [],
+      "riichi_event_index": {},
+      "open_melds_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
+      "discards_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "discard_meta_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "melds_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "current_scores": [34100,27600,22100,16200],
+      "left_tile_count": 12,
+      "chang": 0,
+      "ju": 3
+    },
+    "data": {
+      "tingpais": [
+        {
+          "tile": "5z",
+          "zhenting": false,
+          "infos": [
+            {"tile": "4s", "count": 2, "haveyi": true, "point_rong": 7700}
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "decision_template": "all_last_protect_damaten"
+    }
+  },
+  {
+    "name": "threat_damaten_under_riichi",
+    "description": "场上有威胁且待牌一般、有打点时，应偏默听。",
+    "state": {
+      "self_seat": 0,
+      "hand": ["2m","2m","2m","3m","3m","3m","4p","4p","4p","5s","5s","5s","7z","7z"],
+      "dora_indicators": ["1p"],
+      "open_melds": 0,
+      "visible_counts": {"6m": 2},
+      "riichi_seats": [1],
+      "riichi_event_index": {"1": 60},
+      "open_melds_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
+      "discards_by_seat": {"0": [], "1": ["1m","9m","6m","2p"], "2": [], "3": []},
+      "discard_meta_by_seat": {
+        "0": [],
+        "1": [{"tile":"1m","event_index":10,"is_liqi":false},{"tile":"9m","event_index":20,"is_liqi":false},{"tile":"6m","event_index":60,"is_liqi":true},{"tile":"2p","event_index":61,"is_liqi":false}],
+        "2": [],
+        "3": []
+      },
+      "melds_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "current_scores": [25000,25000,25000,25000],
+      "left_tile_count": 10,
+      "chang": 0,
+      "ju": 2
+    },
+    "data": {
+      "tingpais": [
+        {
+          "tile": "7z",
+          "zhenting": false,
+          "infos": [
+            {"tile": "6m", "count": 3, "haveyi": true, "point_rong": 8000}
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "decision_template": "threat_damaten"
+    }
+  },
+  {
+    "name": "chase_riichi_push_value",
+    "description": "追立场景下若好形且局况需要，仍应允许进攻型立直。",
+    "state": {
+      "self_seat": 0,
+      "hand": ["2m","2m","2m","3m","3m","3m","4p","4p","4p","5s","5s","5s","6z","6z"],
+      "dora_indicators": ["1p"],
+      "open_melds": 0,
+      "visible_counts": {"3p": 0, "6p": 0},
+      "riichi_seats": [1],
+      "riichi_event_index": {"1": 44},
+      "open_melds_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
+      "discards_by_seat": {"0": [], "1": ["1m","9m","4s","7z"], "2": [], "3": []},
+      "discard_meta_by_seat": {
+        "0": [],
+        "1": [
+          {"tile":"1m","event_index":10,"is_liqi":false},
+          {"tile":"9m","event_index":20,"is_liqi":false},
+          {"tile":"4s","event_index":44,"is_liqi":true},
+          {"tile":"7z","event_index":45,"is_liqi":false}
+        ],
+        "2": [],
+        "3": []
+      },
+      "melds_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "current_scores": [18800,32100,27600,21500],
+      "left_tile_count": 14,
+      "chang": 0,
+      "ju": 3
+    },
+    "data": {
+      "tingpais": [
+        {
+          "tile": "6z",
+          "zhenting": false,
+          "infos": [
+            {"tile": "3p", "count": 1, "haveyi": true, "point_rong": 3900},
+            {"tile": "6p", "count": 1, "haveyi": true, "point_rong": 3900}
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "decision_template": "aggressive_riichi"
+    }
+  },
+  {
+    "name": "chiitoi_high_value_damaten",
+    "description": "七对高价值且待牌少时，应偏高价值默听。",
+    "state": {
+      "self_seat": 0,
+      "hand": ["1m","1m","3m","3m","5p","5p","7p","7p","2s","2s","6s","6s","5z","5z"],
+      "dora_indicators": ["4m"],
+      "open_melds": 0,
+      "visible_counts": {"9m": 3},
+      "riichi_seats": [],
+      "riichi_event_index": {},
+      "open_melds_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
+      "discards_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "discard_meta_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "melds_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "current_scores": [25000,25000,25000,25000],
+      "left_tile_count": 18,
+      "chang": 0,
+      "ju": 1
+    },
+    "data": {
+      "tingpais": [
+        {
+          "tile": "5z",
+          "zhenting": false,
+          "infos": [
+            {"tile": "9m", "count": 4, "haveyi": true, "point_rong": 8000}
+          ]
+        }
+      ]
+    },
+    "expect": {
+      "decision_template": "value_damaten"
+    }
+  }
+]

@@ -1071,7 +1071,7 @@ class LiveGameState:
         partners = tile_suji_partners(normalized)
         factor = 0.0
         if partners and all(partner in river_norm for partner in partners):
-            factor -= 1.05
+            factor -= 1.25
         elif partners and any(partner in river_norm for partner in partners):
             factor -= 0.45
         else:
@@ -1617,6 +1617,156 @@ class LiveGameState:
         edge_bias = 10 if number in (1, 9) else 6 if number in (2, 8) else 0
         return edge_bias - tile_to_index(normalized) * 0.01
 
+    def close_choice_shape_features(self, tile):
+        normalized = normalize_tile(tile)
+        suit = normalized[1]
+        number = int(normalized[0]) if suit != "z" else 0
+        counts = hand_to_counts(self.hand)
+        idx = tile_to_index(normalized)
+        tile_count = counts[idx]
+        left1 = right1 = left2 = right2 = 0
+        if suit != "z":
+            base = idx - (number - 1)
+            if number >= 2:
+                left1 = counts[base + number - 2]
+            if number <= 8:
+                right1 = counts[base + number]
+            if number >= 3:
+                left2 = counts[base + number - 3]
+            if number <= 7:
+                right2 = counts[base + number + 1]
+        adjacent_count = left1 + right1
+        gap_count = left2 + right2
+        connected_score = adjacent_count + gap_count * 0.5
+        return {
+            "tile_count": tile_count,
+            "tile_count_n": round(min(tile_count, 4) / 4.0, 4),
+            "pair_source": 1.0 if tile_count >= 2 else 0.0,
+            "triplet_source": 1.0 if tile_count >= 3 else 0.0,
+            "singleton_cut": 1.0 if tile_count == 1 else 0.0,
+            "breaks_head_candidate": 1.0 if tile_count >= 2 else 0.0,
+            "adjacent_count": adjacent_count,
+            "adjacent_count_n": round(min(adjacent_count, 4) / 4.0, 4),
+            "gap_count": gap_count,
+            "gap_count_n": round(min(gap_count, 4) / 4.0, 4),
+            "connected_score": connected_score,
+            "connected_score_n": round(min(connected_score, 6.0) / 6.0, 4),
+            "two_sided_support": 1.0 if left1 > 0 and right1 > 0 else 0.0,
+            "flex_side_cut": 1.0 if tile_count == 1 and connected_score >= 1.5 else 0.0,
+            "isolated_cut": 1.0 if suit != "z" and tile_count == 1 and adjacent_count == 0 and gap_count == 0 else 0.0,
+        }
+
+    def close_choice_route_retention_features(self, item):
+        counts = hand_to_counts(self.hand)
+        discard_index = tile_to_index(item["tile"])
+        if counts[discard_index] > 0:
+            counts[discard_index] -= 1
+
+        value_honors = {self.seat_wind(), self.round_wind(), "5z", "6z", "7z"} - {None}
+        value_honor_tiles = sum(counts[tile_to_index(tile)] for tile in value_honors)
+        terminal_honor_count = sum(
+            count for index, count in enumerate(counts)
+            if count and is_terminal_or_honor_index(index)
+        )
+        simple_count = sum(
+            count for index, count in enumerate(counts)
+            if count and not is_terminal_or_honor_index(index)
+        )
+        suit_counts = [sum(counts[0:9]), sum(counts[9:18]), sum(counts[18:27])]
+        dominant_suit = max(suit_counts) if suit_counts else 0
+        off_suit_tiles = sum(suit_counts) - dominant_suit
+        dora_tiles = dora_set(self.dora_indicators)
+        dora_tiles_left = sum(counts[tile_to_index(tile)] for tile in dora_tiles)
+        dora_adjacent_left = 0
+        for tile in dora_tiles:
+            normalized = normalize_tile(tile)
+            if normalized[1] == "z":
+                continue
+            number = int(normalized[0])
+            base = tile_to_index(f"1{normalized[1]}")
+            for near in (number - 1, number + 1):
+                if 1 <= near <= 9:
+                    dora_adjacent_left += counts[base + near - 1]
+
+        return {
+            "yakuhai_retained": 1.0 if value_honor_tiles > 0 else 0.0,
+            "yakuhai_pair_retained": 1.0 if any(counts[tile_to_index(tile)] >= 2 for tile in value_honors) else 0.0,
+            "tanyao_retained": 1.0 if terminal_honor_count <= 1 and simple_count >= 9 else 0.0,
+            "flush_retained": 1.0 if dominant_suit >= 8 and off_suit_tiles <= 2 else 0.0,
+            "dora_retained": 1.0 if dora_tiles_left > 0 else 0.0,
+            "dora_acceptance_retained": 1.0 if dora_adjacent_left > 0 else 0.0,
+            "route_retention_score": round(
+                (1.2 if value_honor_tiles > 0 else 0.0)
+                + (0.9 if terminal_honor_count <= 1 and simple_count >= 9 else 0.0)
+                + (0.9 if dominant_suit >= 8 and off_suit_tiles <= 2 else 0.0)
+                + (0.8 if dora_tiles_left > 0 else 0.0)
+                + (0.45 if dora_adjacent_left > 0 else 0.0),
+                2,
+            ),
+        }
+
+    def close_choice_endgame_features(self, item, mode, goal, ctx):
+        allowed_danger = float(ctx.get("allowed_danger", 1.4) or 1.4)
+        tile = item["tile"]
+        danger = self.tile_danger_score(tile) if self.danger_seats() else 0.0
+        max_danger = self.max_seat_danger(tile) if self.danger_seats() else 0.0
+        counts = hand_to_counts(self.hand)
+        discard_index = tile_to_index(tile)
+        if counts[discard_index] > 0:
+            counts[discard_index] -= 1
+        remaining_tiles = [index_to_tile(index) for index, count in enumerate(counts) if count > 0]
+        if self.danger_seats():
+            remaining_dangers = [self.max_seat_danger(tile) for tile in remaining_tiles]
+            safe_exit_count = sum(1 for value in remaining_dangers if value <= min(allowed_danger, 1.2))
+            low_danger_exit_count = sum(1 for value in remaining_dangers if value <= allowed_danger)
+            same_band_exit_count = sum(1 for value in remaining_dangers if value <= max(allowed_danger, max_danger + 0.3))
+        else:
+            safe_exit_count = int(item.get("safe_tile_keep_count", 0) or 0)
+            low_danger_exit_count = len(remaining_tiles)
+            same_band_exit_count = len(remaining_tiles)
+
+        danger_ok = max_danger <= allowed_danger
+        capped_advance = float(item.get("advance_ukeire", 0.0) or 0.0) if danger_ok else 0.0
+        capped_improve = float(item.get("improvement_ukeire", 0.0) or 0.0) if danger_ok else 0.0
+        capped_future = float(item.get("future_ukeire", 0.0) or 0.0) if danger_ok else 0.0
+        shape = self.close_choice_shape_features(tile)
+        route = self.close_choice_route_retention_features(item)
+
+        lead_residual = 0.0
+        comeback_residual = 0.0
+        if ctx.get("is_all_last") and ctx.get("place") == 1:
+            lead_residual = (
+                safe_exit_count * 0.35
+                + low_danger_exit_count * 0.18
+                + (1.0 if not item.get("breaks_all_safety") else -1.0)
+                - max_danger * 0.45
+                - shape["flex_side_cut"] * 0.35
+            )
+        elif ctx.get("is_all_last") and ctx.get("place") == 4:
+            comeback_residual = (
+                capped_future * 0.12
+                + capped_improve * 0.09
+                + float(item.get("hand_value", 0.0) or 0.0) * 0.18
+                + route["route_retention_score"] * 0.65
+                - max_danger * 0.25
+            )
+
+        return {
+            **shape,
+            **route,
+            "next_safe_exit_count": safe_exit_count,
+            "next_safe_exit_n": round(min(safe_exit_count, 4) / 4.0, 4),
+            "next_low_danger_exit_count": low_danger_exit_count,
+            "next_low_danger_exit_n": round(min(low_danger_exit_count, 6) / 6.0, 4),
+            "same_safety_band_exit_count": same_band_exit_count,
+            "same_safety_band_exit_n": round(min(same_band_exit_count, 6) / 6.0, 4),
+            "capped_advance_n": round(capped_advance / 40.0, 4),
+            "capped_improve_n": round(capped_improve / 30.0, 4),
+            "capped_future_n": round(capped_future / 25.0, 4),
+            "lead_protect_residual_n": round(max(-4.0, min(4.0, lead_residual)) / 4.0, 4),
+            "comeback_residual_n": round(max(-4.0, min(4.0, comeback_residual)) / 4.0, 4),
+        }
+
     def close_choice_model_active(self, mode, goal, ctx, best, second):
         model = load_close_choice_model()
         if not model:
@@ -1647,31 +1797,17 @@ class LiveGameState:
         advance_ukeire = float(item.get("advance_ukeire", 0.0) or 0.0)
         hand_value = float(item.get("hand_value", 0.0) or 0.0)
         route_score = float(item.get("route_score", 0.0) or 0.0)
+        route_commitment = float(item.get("route_commitment", 0.0) or 0.0)
         mode_score = float(item.get("mode_score", 0.0) or 0.0)
         ukeire = float(item.get("ukeire", 0.0) or 0.0)
+        safe_tile_keep_count = float(item.get("safe_tile_keep_count", 0.0) or 0.0)
+        breaks_all_safety = 1.0 if item.get("breaks_all_safety") else 0.0
 
         is_honor = 1.0 if suit == "z" else 0.0
         is_terminal = 1.0 if suit != "z" and number in (1, 9) else 0.0
         is_edge = 1.0 if suit != "z" and number in (2, 8) else 0.0
         is_center = 1.0 if suit != "z" and number in (4, 5, 6) else 0.0
-        counts = hand_to_counts(self.hand)
-        idx = tile_to_index(normalized)
-        tile_count = counts[idx]
-        left1 = right1 = left2 = right2 = 0
-        if suit != "z":
-            base = idx - (number - 1)
-            if number >= 2:
-                left1 = counts[base + number - 2]
-            if number <= 8:
-                right1 = counts[base + number]
-            if number >= 3:
-                left2 = counts[base + number - 3]
-            if number <= 7:
-                right2 = counts[base + number + 1]
-        adjacent_count = left1 + right1
-        gap_count = left2 + right2
-        connected_score = adjacent_count + gap_count * 0.5
-        isolated_cut = 1.0 if suit != "z" and tile_count == 1 and adjacent_count == 0 and gap_count == 0 else 0.0
+        extra = self.close_choice_endgame_features(item, mode, goal, ctx)
 
         feats = {
             "mode_score_n": round(mode_score / 100.0, 4),
@@ -1683,28 +1819,44 @@ class LiveGameState:
             "danger_n": round(danger / 6.0, 4),
             "max_danger_n": round(max_danger / 4.0, 4),
             "route_n": round(route_score / 5.0, 4),
+            "route_commitment_n": round(route_commitment / 5.0, 4),
+            "safe_keep_n": round(safe_tile_keep_count / 4.0, 4),
+            "breaks_all_safety": breaks_all_safety,
             "honor_cut": is_honor,
             "terminal_cut": is_terminal,
             "edge_cut": is_edge,
             "center_cut": is_center,
             "danger_x_all_last": round(danger / 6.0, 4),
             "future_x_all_last": round(future_ukeire / 25.0, 4),
-            "tile_count_n": round(min(tile_count, 4) / 4.0, 4),
-            "pair_source": 1.0 if tile_count >= 2 else 0.0,
-            "triplet_source": 1.0 if tile_count >= 3 else 0.0,
-            "singleton_cut": 1.0 if tile_count == 1 else 0.0,
-            "adjacent_count_n": round(min(adjacent_count, 4) / 4.0, 4),
-            "gap_count_n": round(min(gap_count, 4) / 4.0, 4),
-            "connected_score_n": round(min(connected_score, 6.0) / 6.0, 4),
-            "two_sided_support": 1.0 if left1 > 0 and right1 > 0 else 0.0,
-            "isolated_cut": isolated_cut,
         }
+        feats.update({
+            key: value for key, value in extra.items()
+            if key.endswith("_n") or key in {
+                "pair_source",
+                "triplet_source",
+                "singleton_cut",
+                "breaks_head_candidate",
+                "two_sided_support",
+                "flex_side_cut",
+                "isolated_cut",
+                "yakuhai_retained",
+                "yakuhai_pair_retained",
+                "tanyao_retained",
+                "flush_retained",
+                "dora_retained",
+                "dora_acceptance_retained",
+            }
+        })
+        feats["route_retention_score"] = round(extra["route_retention_score"] / 5.0, 4)
         if mode == "fold":
             feats["danger_x_fold"] = feats["danger_n"]
             feats["max_danger_x_fold"] = feats["max_danger_n"]
             feats["honor_x_fold"] = is_honor
             feats["terminal_x_fold"] = is_terminal
+            feats["safe_keep_x_fold"] = feats["safe_keep_n"]
             feats["connected_x_fold"] = feats["connected_score_n"]
+            feats["next_safe_x_fold"] = feats["next_safe_exit_n"]
+            feats["capped_future_x_fold"] = feats["capped_future_n"]
         if mode == "neutral":
             feats["future_x_neutral"] = feats["future_n"]
             feats["improve_x_neutral"] = feats["improve_n"]
@@ -1713,9 +1865,13 @@ class LiveGameState:
                 feats["improve_x_neutral_speed"] = feats["improve_n"]
                 feats["connected_x_neutral_speed"] = feats["connected_score_n"]
                 feats["two_sided_x_neutral_speed"] = feats["two_sided_support"]
+                feats["shape_x_neutral_speed"] = feats["connected_score_n"]
             if goal == "稳定优先":
                 feats["danger_x_neutral_stability"] = feats["danger_n"]
                 feats["max_danger_x_neutral_stability"] = feats["max_danger_n"]
+                feats["safe_keep_x_neutral_stability"] = feats["safe_keep_n"]
+                feats["next_safe_x_neutral_stability"] = feats["next_safe_exit_n"]
+                feats["lead_residual_x_neutral_stability"] = feats["lead_protect_residual_n"]
                 feats["pair_x_neutral_stability"] = feats["pair_source"]
                 feats["connected_x_neutral_stability"] = feats["connected_score_n"]
         if mode == "push":
@@ -1723,6 +1879,8 @@ class LiveGameState:
             if goal == "打点优先":
                 feats["route_x_push_value"] = feats["route_n"]
                 feats["value_x_push_value"] = feats["value_n"]
+                feats["route_retention_x_push_value"] = round(extra["route_retention_score"] / 5.0, 4)
+                feats["comeback_residual_x_push_value"] = feats["comeback_residual_n"]
                 feats["pair_x_push_value"] = feats["pair_source"]
                 feats["connected_x_push_value"] = feats["connected_score_n"]
         return feats
@@ -1765,6 +1923,7 @@ class LiveGameState:
         flex_score = self.endgame_tile_flex_score(item["tile"]) if ctx.get("is_all_last") else 0
         turn = ctx.get("turn") or 0
         model_score = self.close_choice_model_score(item, mode, goal, ctx) if model_active else None
+        extra = self.close_choice_endgame_features(item, mode, goal, ctx)
 
         if (
             ctx.get("is_all_last")
@@ -1788,6 +1947,9 @@ class LiveGameState:
                 round(item.get("efficiency_score", 0.0), 2),
                 flex_score,
                 self.close_choice_tile_tiebreak(item["tile"]),
+                round(extra["comeback_residual_n"], 4),
+                round(extra["route_retention_score"], 2),
+                extra["next_safe_exit_count"],
             )
             return ((round(model_score, 4),) + base) if model_score is not None else base
 
@@ -1815,6 +1977,8 @@ class LiveGameState:
                 round(item.get("efficiency_score", 0.0), 2),
                 flex_score,
                 self.close_choice_tile_tiebreak(item["tile"]),
+                extra["next_safe_exit_count"],
+                round(extra["capped_future_n"], 4),
             )
             return ((round(model_score, 4),) + base) if model_score is not None else base
 
@@ -1834,6 +1998,8 @@ class LiveGameState:
                 round(item.get("mode_score", 0.0), 2),
                 round(item.get("efficiency_score", 0.0), 2),
                 self.close_choice_tile_tiebreak(item["tile"]),
+                extra["next_safe_exit_count"],
+                extra["next_low_danger_exit_count"],
             )
             return ((round(model_score, 4),) + base) if model_score is not None else base
 
@@ -1852,6 +2018,10 @@ class LiveGameState:
             round(item.get("mode_score", 0.0), 2),
             round(item.get("efficiency_score", 0.0), 2),
             self.close_choice_tile_tiebreak(item["tile"]),
+            extra["next_safe_exit_count"],
+            round(extra["lead_protect_residual_n"], 4),
+            round(extra["capped_future_n"], 4),
+            round(extra["route_retention_score"], 2),
         )
         return ((round(model_score, 4),) + base) if model_score is not None else base
 
@@ -1902,6 +2072,22 @@ class LiveGameState:
 
         scored.sort(key=lambda pair: pair[0], reverse=True)
         chosen = scored[0][1]
+        if (
+            model_active
+            and ctx.get("is_all_last")
+            and ctx.get("place") == 4
+            and mode == "push"
+            and goal == "打点优先"
+        ):
+            resolver_chosen = max(
+                candidates,
+                key=lambda item: self.close_choice_resolver_key(item, mode, goal, ctx, model_active=False),
+            )
+            if resolver_chosen is not chosen:
+                future_loss = float(resolver_chosen.get("future_ukeire", 0.0) or 0.0) - float(chosen.get("future_ukeire", 0.0) or 0.0)
+                improve_loss = float(resolver_chosen.get("improvement_ukeire", 0.0) or 0.0) - float(chosen.get("improvement_ukeire", 0.0) or 0.0)
+                if future_loss >= 3.0 and improve_loss >= 6.0:
+                    chosen = resolver_chosen
         if chosen is best:
             return options
 
@@ -2258,7 +2444,20 @@ class LiveGameState:
             },
             "candidates": [],
         }
+        feature_ctx = {
+            "is_all_last": self.is_all_last(),
+            "place": score_ctx["place"] if score_ctx else None,
+            "pressure": self.defensive_pressure(),
+            "turn": self.estimated_turn(),
+            "allowed_danger": push_fold.get("allowed_danger", 1.4),
+        }
         for item in options[:candidate_limit]:
+            close_choice_features = self.close_choice_endgame_features(
+                item,
+                push_fold.get("mode"),
+                push_fold.get("goal"),
+                feature_ctx,
+            )
             snapshot["candidates"].append({
                 "tile": item["tile"],
                 "tile_display": display_tile(item["tile"]),
@@ -2278,6 +2477,23 @@ class LiveGameState:
                 "route_commitment": item.get("route_commitment"),
                 "safe_tile_keep_count": item.get("safe_tile_keep_count"),
                 "breaks_all_safety": item.get("breaks_all_safety"),
+                "next_safe_exit_count": close_choice_features["next_safe_exit_count"],
+                "next_low_danger_exit_count": close_choice_features["next_low_danger_exit_count"],
+                "same_safety_band_exit_count": close_choice_features["same_safety_band_exit_count"],
+                "capped_advance_n": close_choice_features["capped_advance_n"],
+                "capped_improve_n": close_choice_features["capped_improve_n"],
+                "capped_future_n": close_choice_features["capped_future_n"],
+                "lead_protect_residual_n": close_choice_features["lead_protect_residual_n"],
+                "comeback_residual_n": close_choice_features["comeback_residual_n"],
+                "breaks_head_candidate": close_choice_features["breaks_head_candidate"],
+                "flex_side_cut": close_choice_features["flex_side_cut"],
+                "route_retention_score": close_choice_features["route_retention_score"],
+                "yakuhai_retained": close_choice_features["yakuhai_retained"],
+                "yakuhai_pair_retained": close_choice_features["yakuhai_pair_retained"],
+                "tanyao_retained": close_choice_features["tanyao_retained"],
+                "flush_retained": close_choice_features["flush_retained"],
+                "dora_retained": close_choice_features["dora_retained"],
+                "dora_acceptance_retained": close_choice_features["dora_acceptance_retained"],
                 "close_choice_model_score": item.get("close_choice_model_score"),
                 "seat_dangers": {
                     str(seat): self.seat_tile_danger(seat, item["tile"])
@@ -2406,7 +2622,19 @@ class LiveGameState:
             bonus += candidate.get("future_ukeire", 0.0) * 0.08
         return round(bonus, 2)
 
-    def call_route_gain(self, candidate):
+    def call_total_counts_after_discard(self, candidate, called_tile=None):
+        counts = candidate.get("counts_after_call", [0] * 34)[:]
+        discard_tile = candidate.get("tile")
+        if discard_tile:
+            discard_index = tile_to_index(discard_tile)
+            if counts[discard_index] > 0:
+                counts[discard_index] -= 1
+
+        for tile in list(candidate.get("used_tiles") or []) + ([called_tile] if called_tile else []):
+            counts[tile_to_index(tile)] += 1
+        return counts
+
+    def call_route_gain(self, candidate, called_tile=None):
         before_routes = detect_hand_routes(
             hand_to_counts(self.hand),
             self.dora_indicators,
@@ -2415,7 +2643,7 @@ class LiveGameState:
             self.open_melds,
         )
         after_routes = detect_hand_routes(
-            candidate["counts_after_call"],
+            self.call_total_counts_after_discard(candidate, called_tile),
             self.dora_indicators,
             self.seat_wind(),
             self.round_wind(),
@@ -2473,6 +2701,63 @@ class LiveGameState:
         if route_commitment >= 0.9 or yaku_score >= 1.2:
             return "medium"
         return "low"
+
+    def call_open_yaku_readiness(self, candidate, op_type=None, called_tile=None):
+        counts = self.call_total_counts_after_discard(candidate, called_tile)
+        value_honors = {self.seat_wind(), self.round_wind(), "5z", "6z", "7z"} - {None}
+        value_pair = any(counts[tile_to_index(tile)] >= 2 for tile in value_honors)
+        value_call = bool(op_type == 3 and called_tile and self.is_value_honor(called_tile))
+
+        simple_count = sum(
+            count for index, count in enumerate(counts)
+            if count and not is_terminal_or_honor_index(index)
+        )
+        terminal_honor_count = sum(
+            count for index, count in enumerate(counts)
+            if count and is_terminal_or_honor_index(index)
+        )
+        suit_counts = [sum(counts[0:9]), sum(counts[9:18]), sum(counts[18:27])]
+        nonzero_suits = sum(1 for count in suit_counts if count > 0)
+        dominant_suit = max(suit_counts) if suit_counts else 0
+        off_suit_tiles = sum(suit_counts) - dominant_suit
+
+        tanyao_ready = terminal_honor_count == 0 and simple_count >= 11
+        tanyao_near = terminal_honor_count <= 1 and simple_count >= 10 and candidate.get("shanten", 9) <= 2
+        flush_ready = nonzero_suits == 1 and dominant_suit >= 8
+        flush_near = dominant_suit >= 10 and off_suit_tiles <= 1 and candidate.get("shanten", 9) <= 2
+
+        tags = []
+        if value_call:
+            tags.append("value_honor_call")
+        elif value_pair:
+            tags.append("value_honor_pair")
+        if tanyao_ready:
+            tags.append("tanyao_ready")
+        elif tanyao_near:
+            tags.append("tanyao_near")
+        if flush_ready:
+            tags.append("flush_ready")
+        elif flush_near:
+            tags.append("flush_near")
+
+        return {
+            "credible": bool(tags),
+            "tags": tags,
+            "terminal_honor_count": terminal_honor_count,
+            "dominant_suit": dominant_suit,
+            "off_suit_tiles": off_suit_tiles,
+        }
+
+    def should_block_early_no_yaku_call(self, candidate, current_shanten, op_type=None, called_tile=None):
+        if self.open_melds > 0:
+            return False
+        if self.phase_label() != "早巡":
+            return False
+        if current_shanten <= 1 or candidate.get("shanten", 9) <= 1:
+            return False
+        readiness = self.call_open_yaku_readiness(candidate, op_type, called_tile)
+        candidate["open_yaku_readiness"] = readiness
+        return not readiness["credible"]
 
     def call_rejection_template(self, candidate):
         breakdown = candidate.get("call_breakdown", {})
@@ -2572,8 +2857,9 @@ class LiveGameState:
 
     def call_plan_score(self, candidate, current_shanten, current_ukeire, called_tile=None, used_tiles=None):
         used_tiles = used_tiles or []
-        yaku_profile = self.open_yaku_profile(candidate["counts_after_call"], called_tile)
-        route_gain, route_profile = self.call_route_gain(candidate)
+        total_counts_after_call = self.call_total_counts_after_discard(candidate, called_tile)
+        yaku_profile = self.open_yaku_profile(total_counts_after_call, called_tile)
+        route_gain, route_profile = self.call_route_gain(candidate, called_tile)
         candidate["route_profile_after_call"] = route_profile
         style_bonus = self.call_style_bonus(candidate, candidate.get("op_type"), called_tile)
         first_discard_penalty = self.call_first_discard_penalty(candidate)
@@ -2698,6 +2984,7 @@ class LiveGameState:
             return None
 
         label = operation_type_label(op_type)
+        best["open_yaku_readiness"] = self.call_open_yaku_readiness(best, op_type, called_tile)
         if (
             best.get("call_breakdown", {}).get("safety_loss", 0.0) >= 2.2
             and best.get("call_breakdown", {}).get("route_gain", 0.0) < 2.0
@@ -2735,6 +3022,24 @@ class LiveGameState:
                 "route_tags": best.get("route_profile_after_call", {}).get("tags", []),
                 "commitment_level": best.get("commitment_level"),
                 "reason": f"不建议 {label} {display_tile(called_tile)}，场上已有明确威胁，当前更应优先保留退路。",
+            }
+        if self.should_block_early_no_yaku_call(best, current_shanten, op_type, called_tile):
+            return {
+                "action": label,
+                "recommended": False,
+                "target_tile": called_tile,
+                "target_tile_display": display_tile(called_tile) if called_tile else None,
+                "combination": best.get("combo"),
+                "followup_discard": best["tile"],
+                "followup_discard_display": display_tile(best["tile"]),
+                "call_score": best.get("call_score"),
+                "call_breakdown": best.get("call_breakdown"),
+                "open_yaku_potential": best.get("yaku_profile", {}).get("score"),
+                "yaku_tags": best.get("yaku_profile", {}).get("tags", []),
+                "route_tags": best.get("route_profile_after_call", {}).get("tags", []),
+                "commitment_level": best.get("commitment_level"),
+                "open_yaku_readiness": best.get("open_yaku_readiness"),
+                "reason": f"不建议 {label} {display_tile(called_tile)}，早巡副露后还没有明确役种路线，先保留门清弹性更稳。",
             }
         if best["shanten"] < current_shanten:
             return {
@@ -3394,6 +3699,8 @@ class LiveGameState:
             lines.append(f"备选: {alt_text}")
         if best.get("route_tags"):
             lines.append("路线: " + " / ".join(best["route_tags"][:3]))
+        if best.get("risk_reward_tags"):
+            lines.append("标签=" + " / ".join(best["risk_reward_tags"][:4]))
         if self.should_fold_strictly(best):
             safe_tiles = self.effective_safe_tiles()
             safe_text = ",".join(display_tile(tile) for tile in safe_tiles[:4])

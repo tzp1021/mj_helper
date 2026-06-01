@@ -1,0 +1,119 @@
+[
+  {
+    "name": "chi_tanyao_push",
+    "description": "顺着断幺路线的吃牌应被允许。",
+    "state": {
+      "self_seat": 0,
+      "hand": ["3m","4m","4p","5p","6p","2s","3s","4s","5s","6s","7s","6z","6z","9m"],
+      "dora_indicators": ["1m"],
+      "open_melds": 0,
+      "visible_counts": {},
+      "riichi_seats": [],
+      "riichi_event_index": {},
+      "open_melds_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
+      "discards_by_seat": {"0": [], "1": ["9m","1z"], "2": ["1p"], "3": ["7z"]},
+      "discard_meta_by_seat": {"0": [], "1": [{"tile":"9m","event_index":1,"is_liqi":false},{"tile":"1z","event_index":2,"is_liqi":false}], "2": [{"tile":"1p","event_index":1,"is_liqi":false}], "3": [{"tile":"7z","event_index":1,"is_liqi":false}]},
+      "melds_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "current_scores": [25000,25000,25000,25000],
+      "left_tile_count": 40,
+      "chang": 0,
+      "ju": 0
+    },
+    "op_type": 2,
+    "combinations": ["3m|4m"],
+    "called_tile": "5m",
+    "expect": {
+      "recommended": true,
+      "followup_discard": "9m"
+    }
+  },
+  {
+    "name": "pon_under_riichi_should_hold",
+    "description": "场上明确有威胁时，役牌碰牌也应优先保留退路。",
+    "state": {
+      "self_seat": 0,
+      "hand": ["2m","3m","4m","3p","4p","5p","4s","5s","6s","6z","6z","1z","7z","9m"],
+      "dora_indicators": ["3z"],
+      "open_melds": 0,
+      "visible_counts": {},
+      "riichi_seats": [1],
+      "riichi_event_index": {"1": 10},
+      "open_melds_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
+      "discards_by_seat": {"0": [], "1": ["4m","7m","1p","9p"], "2": ["1z","9s","3z"], "3": ["2p","8p","5z"]},
+      "discard_meta_by_seat": {
+        "0": [],
+        "1": [{"tile":"4m","event_index":3,"is_liqi":false},{"tile":"7m","event_index":6,"is_liqi":false},{"tile":"1p","event_index":10,"is_liqi":true},{"tile":"9p","event_index":11,"is_liqi":false}],
+        "2": [{"tile":"1z","event_index":1,"is_liqi":false},{"tile":"9s","event_index":2,"is_liqi":false},{"tile":"3z","event_index":3,"is_liqi":false}],
+        "3": [{"tile":"2p","event_index":1,"is_liqi":false},{"tile":"8p","event_index":2,"is_liqi":false},{"tile":"5z","event_index":3,"is_liqi":false}]
+      },
+      "melds_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "current_scores": [25000,25000,25000,25000],
+      "left_tile_count": 38,
+      "chang": 0,
+      "ju": 0
+    },
+    "op_type": 3,
+    "combinations": ["6z|6z"],
+    "called_tile": "6z",
+    "expect": {
+      "recommended": false,
+      "followup_discard": "9m"
+    }
+  },
+  {
+    "name": "chi_flush_route_push",
+    "description": "一色寄明显时，顺着花色的吃牌应被允许。",
+    "state": {
+      "self_seat": 0,
+      "hand": ["2m","3m","4m","4m","6m","7m","8m","2p","3p","4p","1z","5z","6z","9s"],
+      "dora_indicators": ["1m"],
+      "open_melds": 0,
+      "visible_counts": {},
+      "riichi_seats": [],
+      "riichi_event_index": {},
+      "open_melds_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
+      "discards_by_seat": {"0": [], "1": ["9p"], "2": ["1s"], "3": ["7z"]},
+      "discard_meta_by_seat": {"0": [], "1": [{"tile":"9p","event_index":1,"is_liqi":false}], "2": [{"tile":"1s","event_index":1,"is_liqi":false}], "3": [{"tile":"7z","event_index":1,"is_liqi":false}]},
+      "melds_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "current_scores": [25000,25000,25000,25000],
+      "left_tile_count": 44,
+      "chang": 0,
+      "ju": 0
+    },
+    "op_type": 2,
+    "combinations": ["6m|7m"],
+    "called_tile": "8m",
+    "expect": {
+      "recommended": true,
+      "followup_discard": "1z"
+    }
+  },
+  {
+    "name": "toitoi_peng_hold",
+    "description": "对对寄不够成型、碰牌反而退向听时，应继续门清保留弹性。",
+    "state": {
+      "self_seat": 0,
+      "hand": ["2m","2m","4m","4m","6p","6p","7s","7s","5z","5z","1z","1z","9m","3p"],
+      "dora_indicators": ["8p"],
+      "open_melds": 0,
+      "visible_counts": {},
+      "riichi_seats": [],
+      "riichi_event_index": {},
+      "open_melds_by_seat": {"0": 0, "1": 0, "2": 0, "3": 0},
+      "discards_by_seat": {"0": [], "1": ["9p"], "2": ["1s"], "3": ["7z"]},
+      "discard_meta_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "melds_by_seat": {"0": [], "1": [], "2": [], "3": []},
+      "current_scores": [25000,25000,25000,25000],
+      "left_tile_count": 36,
+      "chang": 0,
+      "ju": 1
+    },
+    "op_type": 3,
+    "combinations": ["2m|2m"],
+    "called_tile": "2m",
+    "expect": {
+      "recommended": false,
+      "followup_discard": "9m"
+    }
+  }
+]

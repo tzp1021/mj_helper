@@ -1,6 +1,17 @@
-asset_preview/
-data/
-tools/
-tmp/
 .DS_Store
 **/.DS_Store
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local capture logs and generated replay outputs.
+*.jsonl
+live_debug*.jsonl
+decision_snapshots*.jsonl
+
+# Local datasets can contain large replay exports or third-party reports.
+data/
+tmp/
+
+# Optional local asset preview UI and generated downloads.
+asset_preview/

@@ -64,11 +64,13 @@ def decode_cdp_payload(payload):
 
 
 class CDPClient:
-    def __init__(self, dump_snapshot=False, debug_log_path=None):
+    def __init__(self, dump_snapshot=False, snapshot_first=False, suppress_snapshot=False, debug_log_path=None):
         self.message_id = 0
         self.pending = {}
         self.game_request_ids = set()
         self.dump_snapshot = dump_snapshot
+        self.snapshot_first = snapshot_first
+        self.suppress_snapshot = suppress_snapshot
         self.action_index = 0
         self.debug_log_path = Path(debug_log_path) if debug_log_path else None
 
@@ -207,9 +209,19 @@ class CDPClient:
                 "confidence": snapshot.get("confidence") if snapshot else None,
             })
             if suggestion:
+                show_snapshot = (
+                    self.dump_snapshot
+                    and not self.suppress_snapshot
+                    and snapshot
+                    and snapshot.get("confidence", 1.0) < 0.55
+                )
                 print("", flush=True)
+                if show_snapshot and self.snapshot_first:
+                    print("[snapshot]", flush=True)
+                    print(json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), flush=True)
+                    print("[/snapshot]", flush=True)
                 print(suggestion, flush=True)
-                if self.dump_snapshot and snapshot and snapshot.get("confidence", 1.0) < 0.55:
+                if show_snapshot and not self.snapshot_first:
                     print("[snapshot]", flush=True)
                     print(json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), flush=True)
                     print("[/snapshot]", flush=True)
@@ -229,6 +241,8 @@ async def watch_live(args):
     async with connect(page_ws, max_size=None) as ws:
         client = CDPClient(
             dump_snapshot=args.dump_snapshot,
+            snapshot_first=args.snapshot_first,
+            suppress_snapshot=args.suppress_snapshot,
             debug_log_path=args.debug_log,
         )
         await client.send_nowait(ws, "Network.enable")
@@ -249,6 +263,8 @@ def main():
     parser.add_argument("--schema-har", help="HAR file that contains liqi.json")
     parser.add_argument("--liqi-json", help="Direct path to liqi.json")
     parser.add_argument("--dump-snapshot", action="store_true", help="Print decision snapshot JSON when confidence is low")
+    parser.add_argument("--snapshot-first", action="store_true", help="Print snapshot block before suggestion text")
+    parser.add_argument("--suppress-snapshot", action="store_true", help="Suppress snapshot block even if --dump-snapshot is set")
     parser.add_argument("--debug-log", help="Write realtime debug records as JSONL")
     args = parser.parse_args()
 

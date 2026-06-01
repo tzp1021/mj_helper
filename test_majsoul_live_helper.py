@@ -62,6 +62,112 @@ class RecommendDiscardsTest(unittest.TestCase):
         conservative = state.risk_weight_for_option(item, pressure=4, tilt="保守")
         self.assertLess(aggressive, conservative)
 
+    def test_endgame_close_choice_snapshot_exports_residual_features(self):
+        state = LiveGameState()
+        state.self_seat = 0
+        state.chang = 0
+        state.ju = 3
+        state.left_tile_count = 18
+        state.current_scores = [33000, 27000, 22000, 18000]
+        state.hand = ["1m", "2m", "3m", "4m", "5m", "7m", "8m", "2p", "3p", "5p", "7s", "8s", "5z", "5z"]
+        state.hand_seeded = True
+        state.riichi_seats = {1}
+        state.discards_by_seat = {1: ["1z", "4z", "7z", "6m"]}
+        state.discard_meta_by_seat = {
+            1: [{"tile": t, "event_index": i, "moqie": False, "is_liqi": i == 3} for i, t in enumerate(state.discards_by_seat[1])]
+        }
+        state.riichi_event_index = {1: 3}
+        options = state.evaluate_discard_options()
+        snapshot = state.build_decision_snapshot("test", options)
+        self.assertGreaterEqual(len(snapshot["candidates"]), 3)
+        candidate = snapshot["candidates"][0]
+        self.assertIn("next_safe_exit_count", candidate)
+        self.assertIn("capped_future_n", candidate)
+        self.assertIn("lead_protect_residual_n", candidate)
+        self.assertIn("route_retention_score", candidate)
+        features = state.close_choice_model_features(
+            options[0],
+            state.last_push_fold_decision["mode"],
+            state.last_push_fold_decision["goal"],
+            {
+                "is_all_last": True,
+                "place": 1,
+                "pressure": state.defensive_pressure(),
+                "turn": state.estimated_turn(),
+                "allowed_danger": state.last_push_fold_decision["allowed_danger"],
+            },
+        )
+        self.assertIn("next_safe_exit_n", features)
+        self.assertIn("route_retention_score", features)
+
+    def test_all_last_fourth_value_push_guard_can_override_model(self):
+        state = LiveGameState()
+        state.self_seat = 0
+        state.chang = 1
+        state.ju = 3
+        state.left_tile_count = 18
+        state.current_scores = [18000, 33000, 27000, 22000]
+        state.hand = ["1m", "2m", "3m", "7m", "8m", "9m", "2p", "3p", "4p", "5p", "6p", "7p", "5z", "5z"]
+        state.hand_seeded = True
+        state.close_choice_model_active = lambda mode, goal, ctx, best, second: True
+        state.close_choice_model_score = lambda item, mode, goal, ctx: {"9m": 5.0, "8m": 1.0, "1m": 0.5}[item["tile"]]
+        options = [
+            {
+                "tile": "9m",
+                "shanten": 1,
+                "mode_score": 100.0,
+                "efficiency_score": 105.0,
+                "ukeire": 16,
+                "advance_ukeire": 10,
+                "improvement_ukeire": 2,
+                "future_ukeire": 2.0,
+                "route_score": 2.0,
+                "route_commitment": 1.0,
+                "hand_value": 4.0,
+                "safe_tile_keep_count": 1,
+            },
+            {
+                "tile": "8m",
+                "shanten": 1,
+                "mode_score": 99.0,
+                "efficiency_score": 103.0,
+                "ukeire": 16,
+                "advance_ukeire": 10,
+                "improvement_ukeire": 9,
+                "future_ukeire": 8.0,
+                "route_score": 3.0,
+                "route_commitment": 1.0,
+                "hand_value": 4.0,
+                "safe_tile_keep_count": 1,
+            },
+            {
+                "tile": "1m",
+                "shanten": 1,
+                "mode_score": 98.5,
+                "efficiency_score": 100.0,
+                "ukeire": 14,
+                "advance_ukeire": 8,
+                "improvement_ukeire": 1,
+                "future_ukeire": 1.0,
+                "route_score": 1.5,
+                "route_commitment": 1.0,
+                "hand_value": 4.0,
+                "safe_tile_keep_count": 1,
+            },
+        ]
+        ctx = {
+            "is_all_last": True,
+            "place": 4,
+            "pressure": 4,
+            "turn": state.estimated_turn(),
+            "allowed_danger": 1.4,
+        }
+
+        reordered = state.apply_close_choice_resolver(options, "push", "打点优先", ctx)
+
+        self.assertEqual(reordered[0]["tile"], "8m")
+        self.assertEqual(state.last_discard_policy_note["reason"], "close_choice_model")
+
     def test_discard_safety_policy_prefers_safer_same_shanten_option(self):
         state = LiveGameState()
         state.riichi_seats = {1}
@@ -290,6 +396,33 @@ class LiveGameStateAdviceTest(unittest.TestCase):
         plan = state.build_call_plan(3, ["1z|1z"], "1z")
         self.assertTrue(plan["recommended"])
         self.assertIn("向听从 1 压到 0", plan["reason"])
+        self.assertIn("鸣入役牌东", plan["yaku_tags"])
+
+    def test_early_no_yaku_chi_is_rejected_even_when_shanten_improves(self):
+        state = LiveGameState()
+        state.self_seat = 0
+        state.chang = 0
+        state.ju = 0
+        state.left_tile_count = 60
+        state.current_scores = [25000, 25000, 25000, 25000]
+        state.hand = ["3m", "4m", "6m", "7m", "9m", "1p", "3p", "5p", "8p", "1s", "4s", "7s", "9s"]
+        state.hand_seeded = True
+        plan = state.build_call_plan(2, ["3m|4m"], "2m")
+        self.assertFalse(plan["recommended"])
+        self.assertIn("还没有明确役种路线", plan["reason"])
+        self.assertEqual(plan["open_yaku_readiness"]["tags"], [])
+
+    def test_early_value_honor_peng_still_allowed(self):
+        state = LiveGameState()
+        state.self_seat = 0
+        state.chang = 0
+        state.ju = 0
+        state.left_tile_count = 60
+        state.current_scores = [25000, 25000, 25000, 25000]
+        state.hand = ["1z", "1z", "2m", "3m", "4m", "3p", "4p", "5p", "6s", "7s", "8s", "2p", "9m"]
+        state.hand_seeded = True
+        plan = state.build_call_plan(3, ["1z|1z"], "1z")
+        self.assertTrue(plan["recommended"])
         self.assertIn("鸣入役牌东", plan["yaku_tags"])
 
     def test_call_is_rejected_when_it_breaks_defense_under_riichi(self):
