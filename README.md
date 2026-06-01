@@ -1,5 +1,7 @@
 # 雀魂实时助手
 
+[![CI](https://github.com/tzp1021/mj_helper/actions/workflows/ci.yml/badge.svg)](https://github.com/tzp1021/mj_helper/actions/workflows/ci.yml)
+
 本项目是一个本地运行的雀魂四人日麻辅助工具。它通过 Chrome DevTools 监听雀魂网页版 websocket，对实时动作做 protobuf 解包，维护当前局面状态，并在摸牌、副露、立直、防守等关键节点给出规则型建议。
 
 当前定位：可实战试用的中上级规则助手。它能稳定处理常规牌效、基础攻守、立直/默听、副露取舍和牌谱回放评估，但不是 MAKA/Seer 级别的完整搜索或神经网络 AI。
