@@ -51,6 +51,18 @@ python3 -u majsoul_cdp_live.py \
   --debug-log live_debug.jsonl
 ```
 
+## 离线 Demo
+
+不方便打开游戏时，可以直接跑一个脱敏的模拟局面，查看推荐文本：
+
+```bash
+python3 examples/demo_suggestion.py
+```
+
+输出可用于 README 截图或功能演示，不连接雀魂、不读取本地牌谱数据。
+
+![Offline demo suggestion](docs/images/demo-suggestion.png)
+
 ## 实时建议
 
 建议触发点主要包括：

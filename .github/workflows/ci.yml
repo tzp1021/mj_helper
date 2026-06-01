@@ -31,6 +31,7 @@ jobs:
             majsoul_live_helper.py \
             majsoul_cdp_live.py \
             parse_majsoul_har.py \
+            examples/demo_suggestion.py \
             tools/analyze_aligned_paipu.py \
             test_majsoul_live_helper.py
 
