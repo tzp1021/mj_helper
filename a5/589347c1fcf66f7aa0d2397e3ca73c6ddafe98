@@ -1,0 +1,190 @@
+tools/verify_download_manifest.py
+  a812c24bb9c3030e 1-101
+tools/replay_paipu_chunked.py
+  81bb89a3ffd4466b 1-80
+tools/merge_replay_jsonl.py
+  a812c24bb9c3030e 1-29
+tools/seer_report_fetcher.py
+  a812c24bb9c3030e 147
+  81bb89a3ffd4466b 1-146,148-167
+tools/validate_asset_manifest.py
+  db32dba1d04f36af 1-104
+tools/close_choice_data.py
+  a812c24bb9c3030e 1-7,10-11,14-15,18-291
+tools/compare_fast_vs_refined.py
+  a812c24bb9c3030e 1-40,42-101
+tools/run_riichi_cases.py
+  a812c24bb9c3030e 1-32
+tools/fetch_paipu_records.py
+  a812c24bb9c3030e 345-347
+  81bb89a3ffd4466b 1-344,348-373
+tools/run_call_cases.py
+  a812c24bb9c3030e 1-28
+tools/resolve_manifest_urls_via_page.py
+  a812c24bb9c3030e 1-180
+majsoul_cdp_live.py
+  a812c24bb9c3030e 67,72-73,212-217,219-222,224,244-245,266-267
+.gitignore
+  s_69bc95baf6aea0::t_9f91709ae4b090 3-15
+  s_69bc95baf6aea0::t_6a8240c9d27819 16-17
+tools/run_danger_cases.py
+  a812c24bb9c3030e 1-101
+tools/summarize_refine_changes.py
+  a812c24bb9c3030e 1-54
+tools/run_push_fold_cases.py
+  a812c24bb9c3030e 1-31
+tools/build_valid_paipu_manifest.py
+  a812c24bb9c3030e 88-91
+  81bb89a3ffd4466b 1-87,92-134
+tools/train_close_choice_model_from_rows.py
+  a812c24bb9c3030e 1-85
+requirements.txt
+  s_69bc95baf6aea0::t_9f91709ae4b090 1
+SECURITY.md
+  s_69bc95baf6aea0::t_9f91709ae4b090 1-13
+tools/build_valid_tenhou_manifest.py
+  a812c24bb9c3030e 1-110
+tools/extract_paipu_from_sniff.py
+  a812c24bb9c3030e 121-122
+  81bb89a3ffd4466b 1-120,123-140
+tools/fetch_resource_manifest.py
+  81bb89a3ffd4466b 1-154
+tools/download_asset_manifest.py
+  a812c24bb9c3030e 1-91
+tools/replay_paipu_batches.py
+  a812c24bb9c3030e 25,29,43-44
+  db32dba1d04f36af 1-24,26-28,30-42,45-97
+tools/evaluate_close_choice_model.py
+  a812c24bb9c3030e 1-101
+tools/normalize_replay_jsonl.py
+  a812c24bb9c3030e 1-77
+tools/select_replay_refine_cases.py
+  a812c24bb9c3030e 1-149
+tools/train_close_choice_model.py
+  a812c24bb9c3030e 1-49,62-80,84-108,112-135
+tools/rebalance_close_choice_rows.py
+  a812c24bb9c3030e 1-96
+tools/analyze_aligned_paipu.py
+  a812c24bb9c3030e 261-337
+tools/serve_asset_preview.py
+  db32dba1d04f36af 1-38
+tools/fetch_paipu_range.py
+  81bb89a3ffd4466b 1-326
+tools/analyze_refine_clusters.py
+  a812c24bb9c3030e 1-170
+tools/rebuild_aligned_dataset.py
+  a812c24bb9c3030e 1-216
+tools/build_preview_starter_manifests.py
+  a812c24bb9c3030e 1-112
+tools/normalize_asset_manifest.py
+  a812c24bb9c3030e 1-54
+tools/export_close_choice_dataset.py
+  a812c24bb9c3030e 1-57
+tools/download_tenhou_mjlog.py
+  87443f819379a1c9 1-205
+README.md
+  s_69bc95baf6aea0::t_796bbef01a6fcd 3,5,7,9-13,15,17-19,21-23,25-37,39,47,50-51,54,61,64-65,67-74,77,80-81,83,89-90,95,98-100,103,118-120,122,128-130,174,176,178-188,190-194,196,198,200,202-205,229-240,242
+  s_69bc95baf6aea0::t_3c2a58cff7a266 228
+majsoul_live_helper.py
+  s_69bc95baf6aea0::t_5d76436553ea42 1074,1620-1769,1800,1803-1804,1810,1822-1824,1832-1850,1856,1858-1859,1868,1872-1874,1882-1883,1926,1950-1952,1980-1981,2001-2002,2021-2024,2075-2090,2446-2452,2455-2460,2480-2496,2625-2637,2646,2704-2760,2860-2862,2987,3025-3042,3702-3703
+tools/build_asset_manifest.py
+  a812c24bb9c3030e 1-99
+docs/codex-for-oss.md
+  s_69bc95baf6aea0::t_9f91709ae4b090 1-20
+tools/analyze_close_choice_training_clusters.py
+  a812c24bb9c3030e 1-180
+tools/majsoul_paipu_sniffer.py
+  a812c24bb9c3030e 170
+  81bb89a3ffd4466b 1-169,171-195
+tools/merge_close_choice_training_rows.py
+  a812c24bb9c3030e 1-61
+tools/regression_common.py
+  a812c24bb9c3030e 1-50
+tools/run_all_regressions.py
+  a812c24bb9c3030e 1-35
+tools/run_tenhou_dataset_pipeline.py
+  a812c24bb9c3030e 1-175
+tools/rerun_refine_cases.py
+  a812c24bb9c3030e 43-63,74-79,92,96-97,99-117,156
+  81bb89a3ffd4466b 1-42,64-73,80-91,93-95,98,118-155,157-179
+LICENSE
+  s_69bc95baf6aea0::t_9f91709ae4b090 1-21
+tools/replay_paipu_dir.py
+  a812c24bb9c3030e 11-16,20-24,35-42,44-47,51-52,58-59,77
+  81bb89a3ffd4466b 19,29-34,43,50,53-57,60-76,78-80
+tools/rerun_refine_cases_chunked.py
+  81bb89a3ffd4466b 1-84
+tools/slice_resource_manifest.py
+  81bb89a3ffd4466b 1-73
+tools/majsoul_maka_probe.py
+  81bb89a3ffd4466b 1-311,313-333
+  a812c24bb9c3030e 312
+CONTRIBUTING.md
+  s_69bc95baf6aea0::t_9f91709ae4b090 1-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.12",
+  "base_commit_sha": "a5589347c1fcf66f7aa0d2397e3ca73c6ddafe98",
+  "prompts": {
+    "81bb89a3ffd4466b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019debc5-c6c6-7a12-8ffc-3ceffe43cbcd",
+        "model": "gpt-5.4"
+      },
+      "human_author": "tangzhipeng <tangzhipeng@bigo.sg>",
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 2210,
+      "overriden_lines": 0
+    },
+    "87443f819379a1c9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dfd13-5dfd-7101-b21f-460c45dfb9c0",
+        "model": "gpt-5.5"
+      },
+      "human_author": "tangzhipeng <tangzhipeng@bigo.sg>",
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 205,
+      "overriden_lines": 0
+    },
+    "a812c24bb9c3030e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dee2a-ace0-78c2-b7ee-69d98255ec83",
+        "model": "gpt-5.4"
+      },
+      "human_author": "tangzhipeng <tangzhipeng@bigo.sg>",
+      "total_additions": 18,
+      "total_deletions": 2,
+      "accepted_lines": 3289,
+      "overriden_lines": 12
+    },
+    "db32dba1d04f36af": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019df8ec-e9d5-75a0-8f48-a78d136fdc2a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "tangzhipeng <tangzhipeng@bigo.sg>",
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 235,
+      "overriden_lines": 0
+    }
+  },
+  "logical_commit_id": "a5589347c1fcf66f7aa0d2397e3ca73c6ddafe98",
+  "sessions": {
+    "s_69bc95baf6aea0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e8250-1f1e-79f2-996a-31bdff78b8c6",
+        "model": "gpt-5.5"
+      },
+      "human_author": "tangzhipeng <tangzhipeng@bigo.sg>"
+    }
+  }
+}
